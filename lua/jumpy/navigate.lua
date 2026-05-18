@@ -154,6 +154,45 @@ function M.replace_hunk(bufnr, hunk_idx, new_lines)
   render.update_hunk_lines(bufnr, hunk_idx, new_lines)
 end
 
+function M.add_hunks_to_quickfix()
+  local states = render.get_all_states()
+  local items  = M._transform_hunks_to_quickfix(states)
+
+  if #items == 0 then
+    vim.notify("jumpy: no hunks", vim.log.levels.INFO)
+    return
+  end
+
+  vim.fn.setqflist(items, "r")
+  vim.cmd("copen")
+end
+
+function M._transform_hunks_to_quickfix(states)
+  local items = {}
+  for bufnr, state in ipairs(states) do
+    for _, hunk in pairs(state.hunk) do
+      local text
+      if hunk then
+        local text
+        if #hunk.added_lines > 0 then
+          text = "+ " .. hunk.added_lines[1]
+        else
+          text = "- " .. hunk.removed_lines[1]
+        end
+
+        table.insert(items, {
+          bufnr = bufnr,
+          lnum = hunk.old_start,
+          col = 1,
+          text = text
+        })
+      end
+    end
+  end
+
+  return items
+end
+
 local offset_table = {}
 
 function M._get_offset(bufnr, hunk_idx)
