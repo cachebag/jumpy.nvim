@@ -2,10 +2,21 @@ name: CI
 
 on:
   push:
+    paths:
+      - 'lua/**'
+      - 'plugin/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'Makefile'
     branches: [master]
   pull_request:
     branches: [master]
-
+    paths:
+      - 'lua/**'
+      - 'plugin/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+      - 'Makefile'
 jobs:
   lint:
     runs-on: ubuntu-latest
