@@ -47,7 +47,7 @@ function M.open()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
-  state.buf, state.win = create_float(" describe your change ")
+  state.buf, state.win = create_float(" jumpy ")
 
   M._set_submit_keymap()
 end
