@@ -6,10 +6,12 @@ end
 
 local function build_messages(context)
   local config = get_config()
+
   local user_content = string.format(
-    "File type: %s\n\n--- FILE CONTENTS ---\n%s\n--- END FILE ---\n\nInstruction: %s",
+    "File type: %s\n\n--- FILE CONTENTS ---\n%s\n--- END FILE ---%s\n\nInstruction: %s",
     context.filetype or "text",
     context.file_contents,
+    context.symbols,
     context.prompt
   )
 
