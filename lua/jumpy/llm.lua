@@ -25,13 +25,14 @@ local function build_reprompt_messages(context)
   local config = get_config()
   local template = "File type: %s\n\n"
     .. "--- ORIGINAL LINES ---\n%s\n--- END ORIGINAL ---\n\n"
-    .. "--- PREVIOUSLY PROPOSED (rejected) ---\n%s\n--- END PROPOSED ---\n\n"
+    .. "--- PREVIOUSLY PROPOSED (rejected) ---\n%s\n--- END PROPOSED ---%s\n\n"
     .. "New instruction: %s\n\nReturn ONLY the replacement lines. No explanation, no fences."
   local user_content = string.format(
     template,
     context.filetype or "text",
     table.concat(context.original_lines, "\n"),
     table.concat(context.proposed_lines, "\n"),
+    context.symbols or "",
     context.prompt
   )
 
