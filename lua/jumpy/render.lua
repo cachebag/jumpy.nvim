@@ -12,10 +12,10 @@ function M.get_all_states()
   local states = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
-        local state = M.get_state(buf)
-        if state then
-          states[buf] = state
-        end
+      local state = M.get_state(buf)
+      if state then
+        states[buf] = state
+      end
     end
   end
 
