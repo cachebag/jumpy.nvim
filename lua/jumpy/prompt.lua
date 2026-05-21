@@ -95,6 +95,7 @@ function M.reprompt()
   state.buf, state.win = create_float(" jumpy: reprompt this hunk ")
 
   M._set_submit_keymap()
+  M._setup_completions(state.buf)
 end
 
 function M._set_submit_keymap()
