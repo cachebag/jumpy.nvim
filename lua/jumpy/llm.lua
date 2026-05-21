@@ -26,8 +26,9 @@ local function build_reprompt_messages(context)
   local template = "File type: %s\n\n"
     .. "--- PROPOSED BLOCK ---\n%s\n--- END PROPOSED ---%s\n\n"
     .. "The user rejected the PROPOSED BLOCK above. "
-    .. "Return SEARCH/REPLACE blocks (per the system prompt) whose SEARCH content matches lines from the PROPOSED BLOCK, "
-    .. "revising it according to:\n\n"
+    .. "Return SEARCH/REPLACE blocks (per the system prompt) whose SEARCH "
+    .. "content matches lines from the PROPOSED BLOCK, revising it "
+    .. "according to:\n\n"
     .. "New instruction: %s"
   local user_content = string.format(
     template,
