@@ -24,13 +24,14 @@ end
 local function build_reprompt_messages(context)
   local config = get_config()
   local template = "File type: %s\n\n"
-    .. "--- ORIGINAL LINES ---\n%s\n--- END ORIGINAL ---\n\n"
-    .. "--- PREVIOUSLY PROPOSED (rejected) ---\n%s\n--- END PROPOSED ---%s\n\n"
-    .. "New instruction: %s\n\nReturn ONLY the replacement lines. No explanation, no fences."
+    .. "--- PROPOSED BLOCK ---\n%s\n--- END PROPOSED ---%s\n\n"
+    .. "The user rejected the PROPOSED BLOCK above. "
+    .. "Return SEARCH/REPLACE blocks (per the system prompt) whose SEARCH content matches lines from the PROPOSED BLOCK, "
+    .. "revising it according to:\n\n"
+    .. "New instruction: %s"
   local user_content = string.format(
     template,
     context.filetype or "text",
-    table.concat(context.original_lines, "\n"),
     table.concat(context.proposed_lines, "\n"),
     context.symbols or "",
     context.prompt
@@ -240,8 +241,14 @@ end
 function M.reprompt(context, callback)
   local messages = build_reprompt_messages(context)
   make_request(messages, function(content)
-    local lines = vim.split(content, "\n", { trimempty = false })
-    callback(lines)
+    local patch = require("jumpy.patch")
+    local new_lines, unmatched = patch.apply(context.proposed_lines or {}, content)
+    if unmatched > 0 then
+      vim.schedule(function()
+        vim.notify(string.format("jumpy: %d reprompt block(s) could not be matched", unmatched), vim.log.levels.WARN)
+      end)
+    end
+    callback(new_lines)
   end)
 end
 
