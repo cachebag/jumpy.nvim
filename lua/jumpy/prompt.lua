@@ -56,7 +56,7 @@ function M.open()
 end
 
 function M._setup_completions(buf)
-  vim.bo[buf].completeopt = "menu,menuone,noselect" -- QoL option so vim opens a completion dropdown instead of directly appending the first option
+  vim.bo[buf].completeopt = "menu,menuone,noselect"
 
   local completionItems = {
     { word = "@lsp", menu = "[jumpy]" },
