@@ -78,7 +78,7 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
 
       local id = vim.api.nvim_buf_set_extmark(bufnr, ns, anchor_line, 0, {
         virt_lines = virt_lines,
-        virt_lines_above = true,
+        virt_lines_above = anchor_line ~= 0,
         sign_text = "+",
         sign_hl_group = "JumpyAddedSign",
         priority = 100,
