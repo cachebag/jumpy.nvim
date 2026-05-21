@@ -176,7 +176,7 @@ function M.update_hunk_lines(bufnr, hunk_idx, new_added_lines)
 
     local id = vim.api.nvim_buf_set_extmark(bufnr, ns, anchor_line, 0, {
       virt_lines = virt_lines,
-      virt_lines_above = (hunk.old_count == 0),
+      virt_lines_above = hunk.old_count == 0 and anchor_line ~= 0,
       priority = 100,
     })
     table.insert(hunk.extmarks, id)
