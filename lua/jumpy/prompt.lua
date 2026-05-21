@@ -9,6 +9,34 @@ local state = {
   reprompt_hunk_idx = nil,
 }
 
+local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
+
+local function highlight_mentions(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(buf, mention_ns, 0, -1)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for lnum, line in ipairs(lines) do
+    local search_from = 1
+    while true do
+      local s, e = line:find("@lsp", search_from, true)
+      if not s then
+        break
+      end
+      local prev_ch = s > 1 and line:sub(s - 1, s - 1) or ""
+      local next_ch = line:sub(e + 1, e + 1)
+      if not prev_ch:match("[%w@]") and not next_ch:match("[%w]") then
+        vim.api.nvim_buf_set_extmark(buf, mention_ns, lnum - 1, s - 1, {
+          end_col = e,
+          hl_group = "JumpyMention",
+        })
+      end
+      search_from = e + 1
+    end
+  end
+end
+
 local function create_float(title, initial_lines)
   local width = math.floor(vim.o.columns * 0.6)
   local height = 5
@@ -58,28 +86,43 @@ end
 function M._setup_completions(buf)
   vim.bo[buf].completeopt = "menu,menuone,noselect"
 
+  -- Disable nvim-cmp in this buffer so it doesn't fight with vim.fn.complete and
+  -- doesn't intercept <CR>.
+  pcall(function()
+    require("cmp").setup.buffer({ enabled = false })
+  end)
+
+  -- Highlight group for confirmed mentions (only the actual @lsp token, after a
+  -- valid word boundary — i.e. exactly what _submit will detect).
+  vim.api.nvim_set_hl(0, "JumpyMention", { link = "Special", default = true })
+
   local completionItems = {
     { word = "@lsp", menu = "[jumpy]" },
   }
 
-  vim.api.nvim_create_autocmd("TextChangedI", {
+  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
     buffer = buf,
     callback = function()
+      highlight_mentions(buf)
+
+      if vim.fn.mode() ~= "i" then
+        return
+      end
+
       local line = vim.api.nvim_get_current_line()
       local col = vim.fn.col(".")
       local before = line:sub(1, col - 1)
-
       local match = before:match("@%w*$")
 
-      if vim.fn.mode() == "i" then
-        if match then
-          vim.schedule(function()
-            vim.fn.complete(col - #match, completionItems)
-          end)
-        end
+      if match then
+        vim.schedule(function()
+          vim.fn.complete(col - #match, completionItems)
+        end)
       end
     end,
   })
+
+  highlight_mentions(buf)
 end
 
 function M.reprompt()
@@ -99,7 +142,15 @@ function M.reprompt()
 end
 
 function M._set_submit_keymap()
-  vim.keymap.set({ "n", "i" }, "<CR>", function()
+  vim.keymap.set("i", "<CR>", function()
+    if vim.fn.pumvisible() == 1 then
+      return "<C-y>"
+    end
+    vim.schedule(M._submit)
+    return ""
+  end, { buffer = state.buf, silent = true, expr = true })
+
+  vim.keymap.set("n", "<CR>", function()
     M._submit()
   end, { buffer = state.buf, silent = true })
 
