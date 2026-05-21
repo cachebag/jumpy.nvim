@@ -33,7 +33,7 @@ M.config = {
     accept_all = "<leader>A",
     reject_all = "<leader>X",
     reprompt = "<leader>r",
-    quickfix = "<leader>q"
+    quickfix = "<leader>q",
   },
   highlights = {
     added = "JumpyAdded",
@@ -124,8 +124,8 @@ function M._setup_keymaps()
     require("jumpy.prompt").reprompt()
   end, opts)
   map("n", c.quickfix, function()
-     require("jumpy.navigate").add_hunks_to_quickfix()
-  end)
+    require("jumpy.navigate").add_hunks_to_quickfix()
+  end, opts)
 end
 
 return M
