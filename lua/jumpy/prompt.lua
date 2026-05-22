@@ -1,6 +1,7 @@
 local M = {}
 
 local context_tools = require("jumpy.context-tools")
+local utils = require("jumpy.utils")
 
 local state = {
   win = nil,
@@ -75,9 +76,21 @@ function M.open()
     return
   end
 
+  local mode = vim.api.nvim_get_mode().mode
+  local is_scoped = mode == "v" or mode == "V" or mode == "\22"
+
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
-  state.buf, state.win = create_float(" jumpy ")
+
+  if is_scoped then
+    state.visual_selection = utils.get_visual_selection(state.source_buf)
+  else
+    state.visual_selection = nil
+  end
+
+  local title = is_scoped and " jumpy (scoped) " or " jumpy "
+
+  state.buf, state.win = create_float(title)
 
   M._set_submit_keymap()
   M._setup_completions(state.buf)
@@ -173,7 +186,10 @@ function M._submit()
   end
 
   local source_buf = state.source_buf
-  local source_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+
+  local source_lines = state.visual_selection and vim.split(state.visual_selection.text, "\n", { plain = true })
+    or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+
   local filetype = vim.bo[source_buf].filetype
   local reprompt_idx = state.reprompt_hunk_idx
 
