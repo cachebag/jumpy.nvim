@@ -103,6 +103,7 @@ function M.accept()
   M._apply_offset(bufnr, hunk_idx, delta)
 
   render.clear_hunk(bufnr, hunk_idx)
+  M._refresh_quickfix()
   M._advance_to_next(bufnr)
 end
 
@@ -116,6 +117,7 @@ function M.reject()
   end
 
   render.clear_hunk(bufnr, hunk_idx)
+  M._refresh_quickfix()
   M._advance_to_next(bufnr)
 end
 
@@ -141,17 +143,20 @@ function M.accept_all()
   end
 
   render.clear(bufnr)
+  M._refresh_quickfix()
   vim.notify("jumpy: all hunks accepted", vim.log.levels.INFO)
 end
 
 function M.reject_all()
   local bufnr = vim.api.nvim_get_current_buf()
   render.clear(bufnr)
+  M._refresh_quickfix()
   vim.notify("jumpy: all hunks rejected", vim.log.levels.INFO)
 end
 
 function M.replace_hunk(bufnr, hunk_idx, new_lines)
   render.update_hunk_lines(bufnr, hunk_idx, new_lines)
+  M._refresh_quickfix()
 end
 
 function M.add_hunks_to_quickfix()
@@ -163,8 +168,16 @@ function M.add_hunks_to_quickfix()
     return
   end
 
-  vim.fn.setqflist(items, "r")
+  vim.fn.setqflist({}, " ", { title = "jumpy:hunks", items = items })
   vim.cmd("copen")
+end
+
+function M._refresh_quickfix()
+  if vim.fn.getqflist({ title = 0 }).title ~= "jumpy:hunks" then
+    return
+  end
+  local items = M._transform_hunks_to_quickfix(render.get_all_states())
+  vim.fn.setqflist({}, "r", { title = "jumpy:hunks", items = items })
 end
 
 function M._transform_hunks_to_quickfix(states)
