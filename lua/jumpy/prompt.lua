@@ -82,12 +82,7 @@ function M.open()
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
 
-  if is_scoped then
-    state.visual_selection = utils.get_visual_selection(state.source_buf)
-  else
-    state.visual_selection = nil
-  end
-
+  state.visual_selection = is_scoped and utils.get_visual_selection(state.source_buf) or nil
   local title = is_scoped and " jumpy (scoped) " or " jumpy "
 
   state.buf, state.win = create_float(title)
