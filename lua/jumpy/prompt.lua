@@ -258,6 +258,13 @@ function M._submit()
           end
 
           local hunks = diff.compute(source_lines, proposed_lines)
+          if state.visual_selection then
+            local offset = state.visual_selection.start_line - 1
+
+            for _, hunk in ipairs(hunks) do
+              hunk.old_start = hunk.old_start + offset
+            end
+          end
 
           if #hunks == 0 then
             vim.notify("jumpy: no changes proposed", vim.log.levels.INFO)
