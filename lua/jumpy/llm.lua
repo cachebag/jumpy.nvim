@@ -8,16 +8,39 @@ local function build_file_block(path, contents)
   return string.format("--- FILE: %s ---\n%s\n--- END FILE ---", path, contents)
 end
 
+local function tagged_files_with_source(context)
+  local tagged = context.tagged_files or {}
+  local primary_path = context.primary_path or "current"
+
+  for _, file in ipairs(tagged) do
+    if file.path == primary_path then
+      return tagged
+    end
+  end
+
+  if not context.file_contents then
+    return tagged
+  end
+
+  local files = {
+    {
+      path = primary_path,
+      lines = vim.split(context.file_contents, "\n", { plain = true }),
+    },
+  }
+  for _, file in ipairs(tagged) do
+    table.insert(files, file)
+  end
+  return files
+end
+
 local function build_messages(context)
   local config = get_config()
 
   local tagged = context.tagged_files
   if tagged and #tagged > 0 then
     local parts = {}
-    table.insert(parts, "File type: " .. (context.filetype or "text"))
-    table.insert(parts, "")
-    table.insert(parts, build_file_block(context.primary_path or "current", context.file_contents))
-    for _, file in ipairs(tagged) do
+    for _, file in ipairs(tagged_files_with_source(context)) do
       table.insert(parts, build_file_block(file.path, table.concat(file.lines, "\n")))
     end
     if context.symbols and context.symbols ~= "" then

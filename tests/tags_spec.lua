@@ -129,4 +129,46 @@ describe("tags.parse", function()
     assert.are.equal(1, #result.errors)
     assert.are.equal("fix", result.cleaned_prompt)
   end)
+
+  it("includes the source buffer before @ mentions", function()
+    local result = tags.parse("merge into @lua/b.lua", {
+      root = "/project",
+      source = {
+        path = "lua/a.lua",
+        abs_path = "/project/lua/a.lua",
+        lines = { "source" },
+      },
+      read_file = function(abs_path)
+        if abs_path == "/project/lua/b.lua" then
+          return { "b" }, nil, nil
+        end
+        return nil, "file not found"
+      end,
+    })
+
+    assert.are.equal(2, #result.tagged)
+    assert.are.equal("lua/a.lua", result.tagged[1].path)
+    assert.are.equal("lua/b.lua", result.tagged[2].path)
+  end)
+
+  it("does not duplicate the source when it is also @ mentioned", function()
+    local result = tags.parse("also update @lua/a.lua", {
+      root = "/project",
+      source = {
+        path = "lua/a.lua",
+        abs_path = "/project/lua/a.lua",
+        lines = { "source" },
+      },
+      read_file = function(abs_path)
+        if abs_path == "/project/lua/a.lua" then
+          return { "from disk" }, nil, nil
+        end
+        return nil, "file not found"
+      end,
+    })
+
+    assert.are.equal(1, #result.tagged)
+    assert.are.equal("lua/a.lua", result.tagged[1].path)
+    assert.are.same({ "source" }, result.tagged[1].lines)
+  end)
 end)

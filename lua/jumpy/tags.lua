@@ -186,15 +186,30 @@ function M.read_lines(abs_path, opts)
 end
 
 function M.parse(prompt_text, opts)
-  -- TODO: should probably always include the source buffer too, even without @
   opts = opts or {}
   local root = opts.root or M.project_root()
   local mentions = M.find_mentions(prompt_text)
   local tagged = {}
   local errors = {}
+  local seen_abs = {}
+
+  if opts.source then
+    local src = opts.source
+    local abs_path = M.normalize_abs(src.abs_path or M.resolve_path(src.path, root))
+    seen_abs[abs_path] = true
+    table.insert(tagged, {
+      path = src.path or M.rel_path(abs_path, root),
+      abs_path = abs_path,
+      lines = src.lines,
+      bufnr = src.bufnr,
+    })
+  end
 
   for _, raw_path in ipairs(mentions) do
     local abs_path = M.resolve_path(raw_path, root)
+    if seen_abs[abs_path] then
+      goto continue
+    end
     local lines, err, bufnr = M.read_lines(abs_path, opts)
 
     if not lines then
@@ -210,6 +225,7 @@ function M.parse(prompt_text, opts)
         table.insert(errors, err)
       end
     end
+    ::continue::
   end
 
   return {
