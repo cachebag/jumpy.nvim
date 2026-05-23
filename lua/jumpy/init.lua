@@ -5,6 +5,7 @@ M.config = {
   endpoint = nil,
   model = nil,
   api_key = nil,
+  -- TODO: tell the llm to use "<<<< SEARCH path/to/file" for tagged files
   system_prompt = table.concat({
     "You are a code editor. The user will give you a file and an instruction.",
     "Return ONLY the changed sections as SEARCH/REPLACE blocks.",

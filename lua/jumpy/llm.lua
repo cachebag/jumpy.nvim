@@ -5,6 +5,7 @@ local function get_config()
 end
 
 local function build_messages(context)
+  -- TODO: multi-file user message (--- FILE: path --- blocks) when tagged files present
   local config = get_config()
 
   local user_content = string.format(

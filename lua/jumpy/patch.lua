@@ -35,13 +35,26 @@ local function find_lines(haystack, needle)
   return nil
 end
 
+local function parse_search_marker(line)
+  local rest = line:match("^<<<< SEARCH%s*(.*)$")
+  if rest == nil then
+    return nil
+  end
+  rest = rest:match("^%s*(.-)%s*$")
+  if rest == "" then
+    return nil
+  end
+  return rest
+end
+
 function M.parse(text)
   local blocks = {}
   local lines = split_lines(text)
   local i = 1
 
   while i <= #lines do
-    if lines[i]:match("^<<<< SEARCH%s*$") then
+    local path = parse_search_marker(lines[i])
+    if path ~= nil or lines[i]:match("^<<<< SEARCH%s*$") then
       local search_lines = {}
       local replace_lines = {}
       i = i + 1
@@ -59,6 +72,7 @@ function M.parse(text)
       end
 
       table.insert(blocks, {
+        path = path,
         search = search_lines,
         replace = replace_lines,
       })
@@ -69,13 +83,7 @@ function M.parse(text)
   return blocks
 end
 
-function M.apply(original_lines, response_text)
-  local blocks = M.parse(response_text)
-
-  if #blocks == 0 then
-    return split_lines(response_text), 0
-  end
-
+local function apply_blocks(original_lines, blocks)
   local lines = {}
   for _, l in ipairs(original_lines) do
     table.insert(lines, l)
@@ -87,14 +95,14 @@ function M.apply(original_lines, response_text)
     local pos = find_lines(lines, block.search)
     if pos then
       local new = {}
-      for i = 1, pos - 1 do
-        table.insert(new, lines[i])
+      for j = 1, pos - 1 do
+        table.insert(new, lines[j])
       end
       for _, l in ipairs(block.replace) do
         table.insert(new, l)
       end
-      for i = pos + #block.search, #lines do
-        table.insert(new, lines[i])
+      for j = pos + #block.search, #lines do
+        table.insert(new, lines[j])
       end
       lines = new
     else
@@ -103,6 +111,54 @@ function M.apply(original_lines, response_text)
   end
 
   return lines, unmatched
+end
+
+function M.apply(original_lines, response_text)
+  local blocks = M.parse(response_text)
+
+  if #blocks == 0 then
+    return split_lines(response_text), 0
+  end
+
+  return apply_blocks(original_lines, blocks)
+end
+
+function M.apply_by_file(files_by_path, response_text, primary_path)
+  -- TODO: call this from prompt once llm responds; paths should match tags.parse keys
+  local blocks = M.parse(response_text)
+
+  if #blocks == 0 then
+    if primary_path and files_by_path[primary_path] then
+      local lines, unmatched = M.apply(files_by_path[primary_path], response_text)
+      return { [primary_path] = { lines = lines, unmatched = unmatched } }, unmatched
+    end
+    return {}, 0
+  end
+
+  local grouped = {}
+  for _, block in ipairs(blocks) do
+    local key = block.path or primary_path
+    if key then
+      grouped[key] = grouped[key] or {}
+      table.insert(grouped[key], block)
+    end
+  end
+
+  local results = {}
+  local total_unmatched = 0
+
+  for path, file_blocks in pairs(grouped) do
+    local original = files_by_path[path]
+    if not original then
+      total_unmatched = total_unmatched + #file_blocks
+    else
+      local lines, unmatched = apply_blocks(original, file_blocks)
+      results[path] = { lines = lines, unmatched = unmatched }
+      total_unmatched = total_unmatched + unmatched
+    end
+  end
+
+  return results, total_unmatched
 end
 
 return M

@@ -8,6 +8,7 @@ local state = {
   buf = nil,
   source_buf = nil,
   reprompt_hunk_idx = nil,
+  -- TODO: tagged_files = { path, bufnr, lines } from tags.parse
 }
 
 local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
@@ -172,6 +173,7 @@ function M._set_submit_keymap()
 end
 
 function M._submit()
+  -- TODO: tags.parse -> llm with multi-file context -> apply_by_file -> render.show per file
   local lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
   local prompt_text = table.concat(lines, "\n")
 
