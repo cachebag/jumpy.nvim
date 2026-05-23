@@ -129,7 +129,7 @@ function M.open()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
-  state.paths = path.parse()
+  state.paths = path.list_files()
 
   state.visual_selection = is_scoped and utils.get_visual_selection(state.source_buf) or nil
   local title = is_scoped and " jumpy (scoped) " or " jumpy "
@@ -225,7 +225,7 @@ function M.reprompt()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = hunk_idx
-  state.paths = path.parse()
+  state.paths = path.list_files()
   state.buf, state.win = create_float(" jumpy: reprompt this hunk ")
 
   M._set_submit_keymap()
@@ -270,12 +270,12 @@ function M._submit()
     or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
   local source_name = vim.api.nvim_buf_get_name(source_buf)
-  local source_rel = source_name ~= "" and tags.rel_path(source_name, tags.project_root()) or "current"
+  local source_rel = source_name ~= "" and tags.rel_path(source_name, path.project_root()) or "current"
 
   local parsed = tags.parse(prompt_text, {
     source = {
       path = source_rel,
-      abs_path = source_name ~= "" and tags.normalize_abs(source_name) or nil,
+      abs_path = source_name ~= "" and path.normalize_abs(source_name) or nil,
       lines = source_lines,
       bufnr = source_buf,
     },
@@ -363,8 +363,8 @@ function M._submit()
           local tagged_by_path = index_tagged_files(tagged_files)
           local total_hunks = 0
 
-          for path, result in pairs(results) do
-            local file = tagged_by_path[path]
+          for file_path, result in pairs(results) do
+            local file = tagged_by_path[file_path]
             if file then
               local bufnr = buffer_for_tagged_file(tags, file)
               if bufnr then
@@ -374,7 +374,7 @@ function M._submit()
                   total_hunks = total_hunks + #hunks
                 end
               else
-                vim.notify("jumpy: could not open " .. path .. ", skipping", vim.log.levels.WARN)
+                vim.notify("jumpy: could not open " .. file_path .. ", skipping", vim.log.levels.WARN)
               end
             end
           end

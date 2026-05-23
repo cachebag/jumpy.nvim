@@ -1,3 +1,5 @@
+local path = require("jumpy.path")
+
 local M = {}
 
 M.MAX_BYTES = 256 * 1024
@@ -28,9 +30,9 @@ local function normalize_mention_path(path)
 end
 
 local function mention_remove_len(raw)
-  local path = normalize_mention_path(raw)
-  if raw:sub(-1) == "." and #raw == #path + 1 then
-    return #path
+  local norm_path = normalize_mention_path(raw)
+  if raw:sub(-1) == "." and #raw == #norm_path + 1 then
+    return #norm_path
   end
   return #raw
 end
@@ -49,11 +51,11 @@ function M.find_mentions(text)
     if word_boundary_before(text, at) then
       local rest = text:sub(at + 1)
       local raw = rest:match("^([%.%w%-_/]+)")
-      local path = raw and normalize_mention_path(raw) or nil
-      if path and path ~= "" and not RESERVED[path] and word_boundary_after(text, at + #raw) then
-        if not seen[path] then
-          seen[path] = true
-          table.insert(mentions, path)
+      local norm_path = raw and normalize_mention_path(raw) or nil
+      if norm_path and norm_path ~= "" and not RESERVED[norm_path] and word_boundary_after(text, at + #raw) then
+        if not seen[norm_path] then
+          seen[norm_path] = true
+          table.insert(mentions, norm_path)
         end
         search_from = at + #raw + 1
       else
@@ -100,34 +102,6 @@ function M.strip_mentions(text)
   return trim((stripped:gsub("%s+", " ")))
 end
 
-function M.normalize_abs(path)
-  if vim and vim.fn and vim.fn.fnamemodify then
-    path = vim.fn.fnamemodify(path, ":p")
-  end
-  if path:sub(-1) == "/" then
-    path = path:sub(1, -2)
-  end
-  return path
-end
-
-function M.resolve_path(raw_path, root)
-  root = M.normalize_abs(root or (vim and vim.fn and vim.fn.getcwd() or "."))
-  if raw_path:sub(1, 1) == "/" then
-    return M.normalize_abs(raw_path)
-  end
-  return M.normalize_abs(root .. "/" .. raw_path)
-end
-
-function M.rel_path(abs_path, root)
-  abs_path = M.normalize_abs(abs_path)
-  root = M.normalize_abs(root)
-  local prefix = root .. "/"
-  if abs_path:sub(1, #prefix) == prefix then
-    return abs_path:sub(#prefix + 1)
-  end
-  return abs_path
-end
-
 local function slice_lines(lines, count)
   local out = {}
   for i = 1, math.min(count, #lines) do
@@ -145,26 +119,12 @@ function M.truncate_lines(lines)
   return lines, truncated
 end
 
-function M.project_root()
-  local cwd = vim.fn.getcwd()
-  if vim.system then
-    local result = vim.system({ "git", "rev-parse", "--show-toplevel" }, { cwd = cwd }):wait()
-    if result.code == 0 then
-      local root = vim.trim(result.stdout or "")
-      if root ~= "" then
-        return M.normalize_abs(root)
-      end
-    end
-  end
-  return M.normalize_abs(cwd)
-end
-
 function M.find_bufnr(abs_path)
-  abs_path = M.normalize_abs(abs_path)
+  abs_path = path.normalize_abs(abs_path)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(bufnr) then
       local name = vim.api.nvim_buf_get_name(bufnr)
-      if name ~= "" and M.normalize_abs(name) == abs_path then
+      if name ~= "" and path.normalize_abs(name) == abs_path then
         return bufnr
       end
     end
@@ -173,7 +133,7 @@ function M.find_bufnr(abs_path)
 end
 
 function M.open_buffer(abs_path)
-  abs_path = M.normalize_abs(abs_path)
+  abs_path = path.normalize_abs(abs_path)
 
   local bufnr = M.find_bufnr(abs_path)
   if bufnr then
@@ -237,7 +197,7 @@ end
 
 function M.parse(prompt_text, opts)
   opts = opts or {}
-  local root = opts.root or M.project_root()
+  local root = opts.root or path.project_root()
   local mentions = M.find_mentions(prompt_text)
   local tagged = {}
   local errors = {}
@@ -245,10 +205,10 @@ function M.parse(prompt_text, opts)
 
   if opts.source then
     local src = opts.source
-    local abs_path = M.normalize_abs(src.abs_path or M.resolve_path(src.path, root))
+    local abs_path = path.normalize_abs(src.abs_path or path.resolve_path(src.path, root))
     seen_abs[abs_path] = true
     table.insert(tagged, {
-      path = src.path or M.rel_path(abs_path, root),
+      path = src.path or path.rel_path(abs_path, root),
       abs_path = abs_path,
       lines = src.lines,
       bufnr = src.bufnr,
@@ -256,7 +216,7 @@ function M.parse(prompt_text, opts)
   end
 
   for _, raw_path in ipairs(mentions) do
-    local abs_path = M.resolve_path(raw_path, root)
+    local abs_path = path.resolve_path(raw_path, root)
     if not seen_abs[abs_path] then
       local lines, err, bufnr = M.read_lines(abs_path, opts)
 
@@ -264,7 +224,7 @@ function M.parse(prompt_text, opts)
         table.insert(errors, err or ("could not read: " .. raw_path))
       else
         table.insert(tagged, {
-          path = M.rel_path(abs_path, root),
+          path = path.rel_path(abs_path, root),
           abs_path = abs_path,
           lines = lines,
           bufnr = bufnr,

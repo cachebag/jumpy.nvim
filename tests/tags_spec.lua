@@ -70,26 +70,6 @@ describe("tags.strip_mentions", function()
   end)
 end)
 
-describe("tags.resolve_path", function()
-  it("resolves relative paths against root", function()
-    assert.are.equal("/project/lua/foo.lua", tags.resolve_path("lua/foo.lua", "/project"))
-  end)
-
-  it("keeps absolute paths unchanged", function()
-    assert.are.equal("/tmp/foo.lua", tags.resolve_path("/tmp/foo.lua", "/project"))
-  end)
-end)
-
-describe("tags.rel_path", function()
-  it("returns a path relative to root", function()
-    assert.are.equal("lua/foo.lua", tags.rel_path("/project/lua/foo.lua", "/project"))
-  end)
-
-  it("returns absolute path when outside root", function()
-    assert.are.equal("/tmp/foo.lua", tags.rel_path("/tmp/foo.lua", "/project"))
-  end)
-end)
-
 describe("tags.truncate_lines", function()
   it("passes through small files", function()
     local lines = { "a", "b" }
