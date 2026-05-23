@@ -43,6 +43,14 @@ describe("tags.find_mentions", function()
   it("finds simple filenames", function()
     assert.are.same({ "foo.c" }, tags.find_mentions("take methods in @foo.c"))
   end)
+
+  it("ignores trailing sentence punctuation", function()
+    assert.are.same({ "foo.lua" }, tags.find_mentions("update @foo.lua."))
+  end)
+
+  it("ignores trailing slashes", function()
+    assert.are.same({ "lua/jumpy" }, tags.find_mentions("look at @lua/jumpy/"))
+  end)
 end)
 
 describe("tags.strip_mentions", function()
@@ -51,6 +59,14 @@ describe("tags.strip_mentions", function()
       "move helpers from into this file",
       tags.strip_mentions("move helpers from @lua/jumpy/foo.lua into this file")
     )
+  end)
+
+  it("removes mentions followed by sentence punctuation", function()
+    assert.are.equal("update .", tags.strip_mentions("update @foo.lua."))
+  end)
+
+  it("removes mentions followed by trailing slashes", function()
+    assert.are.equal("look at", tags.strip_mentions("look at @lua/jumpy/"))
   end)
 end)
 

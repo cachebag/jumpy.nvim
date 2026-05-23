@@ -21,6 +21,20 @@ local function word_boundary_after(text, pos)
   return not text:sub(pos + 1, pos + 1):match("[%w]")
 end
 
+local function normalize_mention_path(path)
+  path = path:gsub("/+$", "")
+  path = path:gsub("%.$", "")
+  return path
+end
+
+local function mention_remove_len(raw)
+  local path = normalize_mention_path(raw)
+  if raw:sub(-1) == "." and #raw == #path + 1 then
+    return #path
+  end
+  return #raw
+end
+
 function M.find_mentions(text)
   local mentions = {}
   local seen = {}
@@ -34,13 +48,14 @@ function M.find_mentions(text)
 
     if word_boundary_before(text, at) then
       local rest = text:sub(at + 1)
-      local path = rest:match("^([%.%w%-_/]+)")
-      if path and path ~= "" and not RESERVED[path] and word_boundary_after(text, at + #path) then
+      local raw = rest:match("^([%.%w%-_/]+)")
+      local path = raw and normalize_mention_path(raw) or nil
+      if path and path ~= "" and not RESERVED[path] and word_boundary_after(text, at + #raw) then
         if not seen[path] then
           seen[path] = true
           table.insert(mentions, path)
         end
-        search_from = at + #path + 1
+        search_from = at + #raw + 1
       else
         search_from = at + 1
       end
@@ -58,9 +73,30 @@ end
 
 function M.strip_mentions(text)
   local stripped = text
-  for _, path in ipairs(M.find_mentions(text)) do
-    stripped = stripped:gsub("%f[%w@]@" .. path:gsub("([%-%.%+%[%]%(%)%$%^%%%?%*])", "%%%1") .. "%f[%W]", "")
+  local search_from = 1
+
+  while search_from <= #stripped do
+    local at = stripped:find("@", search_from, true)
+    if not at then
+      break
+    end
+
+    if word_boundary_before(stripped, at) then
+      local rest = stripped:sub(at + 1)
+      local raw = rest:match("^([%.%w%-_/]+)")
+      local path = raw and normalize_mention_path(raw) or nil
+      if path and path ~= "" and not RESERVED[path] and word_boundary_after(stripped, at + #raw) then
+        local remove_len = mention_remove_len(raw)
+        stripped = stripped:sub(1, at - 1) .. stripped:sub(at + remove_len + 1)
+        search_from = at
+      else
+        search_from = at + 1
+      end
+    else
+      search_from = at + 1
+    end
   end
+
   return trim((stripped:gsub("%s+", " ")))
 end
 
@@ -124,7 +160,6 @@ function M.project_root()
 end
 
 function M.find_bufnr(abs_path)
-  -- TODO: open the file if no buffer exists yet (probably at apply time)
   abs_path = M.normalize_abs(abs_path)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(bufnr) then
@@ -135,6 +170,23 @@ function M.find_bufnr(abs_path)
     end
   end
   return nil
+end
+
+function M.open_buffer(abs_path)
+  abs_path = M.normalize_abs(abs_path)
+
+  local bufnr = M.find_bufnr(abs_path)
+  if bufnr then
+    return bufnr
+  end
+
+  if vim.fn.filereadable(abs_path) ~= 1 then
+    return nil
+  end
+
+  bufnr = vim.fn.bufadd(abs_path)
+  vim.fn.bufload(bufnr)
+  return bufnr
 end
 
 function M.read_lines(abs_path, opts)
@@ -205,25 +257,23 @@ function M.parse(prompt_text, opts)
 
   for _, raw_path in ipairs(mentions) do
     local abs_path = M.resolve_path(raw_path, root)
-    if seen_abs[abs_path] then
-      goto continue
-    end
-    local lines, err, bufnr = M.read_lines(abs_path, opts)
+    if not seen_abs[abs_path] then
+      local lines, err, bufnr = M.read_lines(abs_path, opts)
 
-    if not lines then
-      table.insert(errors, err or ("could not read: " .. raw_path))
-    else
-      table.insert(tagged, {
-        path = M.rel_path(abs_path, root),
-        abs_path = abs_path,
-        lines = lines,
-        bufnr = bufnr,
-      })
-      if err then
-        table.insert(errors, err)
+      if not lines then
+        table.insert(errors, err or ("could not read: " .. raw_path))
+      else
+        table.insert(tagged, {
+          path = M.rel_path(abs_path, root),
+          abs_path = abs_path,
+          lines = lines,
+          bufnr = bufnr,
+        })
+        if err then
+          table.insert(errors, err)
+        end
       end
     end
-    ::continue::
   end
 
   return {

@@ -12,6 +12,21 @@ local state = {
 
 local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
 
+local function index_tagged_files(tagged_files)
+  local by_path = {}
+  for _, file in ipairs(tagged_files) do
+    by_path[file.path] = file
+  end
+  return by_path
+end
+
+local function buffer_for_tagged_file(tags, file)
+  if file.bufnr and vim.api.nvim_buf_is_valid(file.bufnr) then
+    return file.bufnr
+  end
+  return tags.open_buffer(file.abs_path)
+end
+
 local function highlight_mentions(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -277,33 +292,23 @@ function M._submit()
             vim.notify(string.format("jumpy: %d block(s) could not be matched", total_unmatched), vim.log.levels.WARN)
           end
 
+          local tagged_by_path = index_tagged_files(tagged_files)
           local total_hunks = 0
 
           for path, result in pairs(results) do
-            local file_entry
-            for _, f in ipairs(tagged_files) do
-              if f.path == path then
-                file_entry = f
-                break
+            local file = tagged_by_path[path]
+            if file then
+              local bufnr = buffer_for_tagged_file(tags, file)
+              if bufnr then
+                local hunks = diff.compute(file.lines, result.lines)
+                if #hunks > 0 then
+                  render.show(bufnr, hunks, file.lines, result.lines)
+                  total_hunks = total_hunks + #hunks
+                end
+              else
+                vim.notify("jumpy: could not open " .. path .. ", skipping", vim.log.levels.WARN)
               end
             end
-            if not file_entry then
-              goto continue
-            end
-
-            local bufnr = file_entry.bufnr or tags.find_bufnr(file_entry.abs_path)
-            if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
-              vim.notify("jumpy: no buffer for " .. path .. ", skipping", vim.log.levels.WARN)
-              goto continue
-            end
-
-            local hunks = diff.compute(file_entry.lines, result.lines)
-            if #hunks > 0 then
-              render.show(bufnr, hunks, file_entry.lines, result.lines)
-              total_hunks = total_hunks + #hunks
-            end
-
-            ::continue::
           end
 
           if total_hunks == 0 then
