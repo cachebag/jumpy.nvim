@@ -124,11 +124,12 @@ function M.apply(original_lines, response_text)
 end
 
 function M.apply_by_file(files_by_path, response_text, primary_path)
-  -- TODO: call this from prompt once llm responds; paths should match tags.parse keys
+  assert(primary_path, "apply_by_file requires a primary_path")
+
   local blocks = M.parse(response_text)
 
   if #blocks == 0 then
-    if primary_path and files_by_path[primary_path] then
+    if files_by_path[primary_path] then
       local lines, unmatched = M.apply(files_by_path[primary_path], response_text)
       return { [primary_path] = { lines = lines, unmatched = unmatched } }, unmatched
     end
@@ -138,10 +139,8 @@ function M.apply_by_file(files_by_path, response_text, primary_path)
   local grouped = {}
   for _, block in ipairs(blocks) do
     local key = block.path or primary_path
-    if key then
-      grouped[key] = grouped[key] or {}
-      table.insert(grouped[key], block)
-    end
+    grouped[key] = grouped[key] or {}
+    table.insert(grouped[key], block)
   end
 
   local results = {}
