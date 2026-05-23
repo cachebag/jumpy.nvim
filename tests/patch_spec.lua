@@ -14,8 +14,45 @@ describe("patch.parse", function()
     local blocks = patch.parse(text)
 
     assert.are.equal(1, #blocks)
+    assert.is_nil(blocks[1].path)
     assert.are.same({ "old line" }, blocks[1].search)
     assert.are.same({ "new line" }, blocks[1].replace)
+  end)
+
+  it("parses a search/replace block with file path", function()
+    local text = table.concat({
+      "<<<< SEARCH lua/jumpy/foo.lua",
+      "old line",
+      "====",
+      "new line",
+      ">>>> REPLACE",
+    }, "\n")
+    local blocks = patch.parse(text)
+
+    assert.are.equal(1, #blocks)
+    assert.are.equal("lua/jumpy/foo.lua", blocks[1].path)
+    assert.are.same({ "old line" }, blocks[1].search)
+    assert.are.same({ "new line" }, blocks[1].replace)
+  end)
+
+  it("parses mixed path and pathless blocks", function()
+    local text = table.concat({
+      "<<<< SEARCH",
+      "aaa",
+      "====",
+      "bbb",
+      ">>>> REPLACE",
+      "<<<< SEARCH bar.lua",
+      "ccc",
+      "====",
+      "ddd",
+      ">>>> REPLACE",
+    }, "\n")
+    local blocks = patch.parse(text)
+
+    assert.are.equal(2, #blocks)
+    assert.is_nil(blocks[1].path)
+    assert.are.equal("bar.lua", blocks[2].path)
   end)
 
   it("parses multiple blocks", function()
@@ -201,5 +238,77 @@ describe("patch.apply", function()
     local result, unmatched = patch.apply(original, response)
     assert.are.equal(0, unmatched)
     assert.are.same({ "  if true then", "    print('hello')", "  end" }, result)
+  end)
+end)
+
+describe("patch.apply_by_file", function()
+  it("routes blocks to files by path", function()
+    local files = {
+      ["lua/a.lua"] = { "a-old", "shared" },
+      ["lua/b.lua"] = { "b-old", "shared" },
+    }
+    local response = table.concat({
+      "<<<< SEARCH lua/a.lua",
+      "a-old",
+      "====",
+      "a-new",
+      ">>>> REPLACE",
+      "<<<< SEARCH lua/b.lua",
+      "b-old",
+      "====",
+      "b-new",
+      ">>>> REPLACE",
+    }, "\n")
+
+    local results, unmatched = patch.apply_by_file(files, response, "lua/a.lua")
+    assert.are.equal(0, unmatched)
+    assert.are.same({ "a-new", "shared" }, results["lua/a.lua"].lines)
+    assert.are.same({ "b-new", "shared" }, results["lua/b.lua"].lines)
+  end)
+
+  it("applies pathless blocks to the primary file", function()
+    local files = {
+      ["main.lua"] = { "old", "keep" },
+      ["other.lua"] = { "x" },
+    }
+    local response = table.concat({
+      "<<<< SEARCH",
+      "old",
+      "====",
+      "new",
+      ">>>> REPLACE",
+    }, "\n")
+
+    local results, unmatched = patch.apply_by_file(files, response, "main.lua")
+    assert.are.equal(0, unmatched)
+    assert.are.same({ "new", "keep" }, results["main.lua"].lines)
+    assert.is_nil(results["other.lua"])
+  end)
+
+  it("counts blocks for unknown files as unmatched", function()
+    local files = {
+      ["known.lua"] = { "a" },
+    }
+    local response = table.concat({
+      "<<<< SEARCH missing.lua",
+      "a",
+      "====",
+      "b",
+      ">>>> REPLACE",
+    }, "\n")
+
+    local results, unmatched = patch.apply_by_file(files, response, "known.lua")
+    assert.are.equal(1, unmatched)
+    assert.are.same({}, results)
+  end)
+
+  it("falls back to full-file replace when no blocks are found", function()
+    local files = {
+      ["main.lua"] = { "old" },
+    }
+
+    local results, unmatched = patch.apply_by_file(files, "new\nlines", "main.lua")
+    assert.are.equal(0, unmatched)
+    assert.are.same({ "new", "lines" }, results["main.lua"].lines)
   end)
 end)

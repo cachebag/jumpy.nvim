@@ -24,6 +24,17 @@ M.config = {
     "- Do NOT wrap in markdown code fences",
     "- Do NOT explain",
   }, "\n"),
+  system_prompt_multi_file = table.concat({
+    "When multiple files are provided, prefix the SEARCH marker with the file path:",
+    "<<<< SEARCH path/to/file.lua",
+    "exact existing lines from that file",
+    "====",
+    "replacement lines",
+    ">>>> REPLACE",
+    "",
+    "The path must exactly match the path shown in the --- FILE: ... --- header.",
+    "You may edit any subset of the provided files. Every SEARCH block MUST include a path.",
+  }, "\n"),
   keymaps = {
     prompt = "<leader>j",
     next_hunk = "]h",
