@@ -8,7 +8,6 @@ local state = {
   buf = nil,
   source_buf = nil,
   reprompt_hunk_idx = nil,
-  -- TODO: tagged_files = { path, bufnr, lines } from tags.parse
 }
 
 local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
@@ -173,7 +172,6 @@ function M._set_submit_keymap()
 end
 
 function M._submit()
-  -- TODO: tags.parse -> llm with multi-file context -> apply_by_file -> render.show per file
   local lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
   local prompt_text = table.concat(lines, "\n")
 
@@ -183,12 +181,35 @@ function M._submit()
   end
 
   local source_buf = state.source_buf
+  local tags = require("jumpy.tags")
 
   local source_lines = state.visual_selection and vim.split(state.visual_selection.text, "\n", { plain = true })
     or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
+  local source_name = vim.api.nvim_buf_get_name(source_buf)
+  local source_rel = source_name ~= "" and tags.rel_path(source_name, tags.project_root()) or "current"
+
+  local parsed = tags.parse(prompt_text, {
+    source = {
+      path = source_rel,
+      abs_path = source_name ~= "" and tags.normalize_abs(source_name) or nil,
+      lines = source_lines,
+      bufnr = source_buf,
+    },
+  })
+
+  local cleaned_prompt = parsed.cleaned_prompt
+  local tagged_files = parsed.tagged
+
+  if #parsed.errors > 0 then
+    for _, err in ipairs(parsed.errors) do
+      vim.notify("jumpy: " .. err, vim.log.levels.WARN)
+    end
+  end
+
   local filetype = vim.bo[source_buf].filetype
   local reprompt_idx = state.reprompt_hunk_idx
+  local is_multi_file = #tagged_files > 1
 
   local llm = require("jumpy.llm")
 
@@ -215,7 +236,7 @@ function M._submit()
       local context = {
         original_lines = hunk.removed_lines,
         proposed_lines = hunk.added_lines,
-        prompt = prompt_text,
+        prompt = cleaned_prompt,
         symbols = symbols,
         filetype = filetype,
       }
@@ -229,10 +250,80 @@ function M._submit()
           vim.notify("jumpy: hunk updated", vim.log.levels.INFO)
         end)
       end)
+    elseif is_multi_file then
+      local context = {
+        file_contents = table.concat(source_lines, "\n"),
+        tagged_files = tagged_files,
+        primary_path = source_rel,
+        prompt = cleaned_prompt,
+        symbols = symbols,
+        filetype = filetype,
+      }
+
+      llm.request(context, function(response_text)
+        vim.schedule(function()
+          local diff = require("jumpy.diff")
+          local render = require("jumpy.render")
+          local patch = require("jumpy.patch")
+
+          local files_by_path = {}
+          for _, file in ipairs(tagged_files) do
+            files_by_path[file.path] = file.lines
+          end
+
+          local results, total_unmatched = patch.apply_by_file(files_by_path, response_text, source_rel)
+
+          if total_unmatched > 0 then
+            vim.notify(string.format("jumpy: %d block(s) could not be matched", total_unmatched), vim.log.levels.WARN)
+          end
+
+          local total_hunks = 0
+
+          for path, result in pairs(results) do
+            local file_entry
+            for _, f in ipairs(tagged_files) do
+              if f.path == path then
+                file_entry = f
+                break
+              end
+            end
+            if not file_entry then
+              goto continue
+            end
+
+            local bufnr = file_entry.bufnr or tags.find_bufnr(file_entry.abs_path)
+            if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+              vim.notify("jumpy: no buffer for " .. path .. ", skipping", vim.log.levels.WARN)
+              goto continue
+            end
+
+            local hunks = diff.compute(file_entry.lines, result.lines)
+            if #hunks > 0 then
+              render.show(bufnr, hunks, file_entry.lines, result.lines)
+              total_hunks = total_hunks + #hunks
+            end
+
+            ::continue::
+          end
+
+          if total_hunks == 0 then
+            vim.notify("jumpy: no changes proposed", vim.log.levels.INFO)
+            return
+          end
+
+          vim.notify(
+            string.format("jumpy: %d hunk(s) proposed across %d file(s)", total_hunks, vim.tbl_count(results)),
+            vim.log.levels.INFO
+          )
+
+          local nav = require("jumpy.navigate")
+          nav.next_hunk()
+        end)
+      end)
     else
       local context = {
         file_contents = table.concat(source_lines, "\n"),
-        prompt = prompt_text,
+        prompt = cleaned_prompt,
         symbols = symbols,
         filetype = filetype,
       }
@@ -280,7 +371,7 @@ function M._submit()
   end
 
   if prompt_text:find("@lsp") then
-    prompt_text = vim.trim(prompt_text:gsub("%f[%w@]@lsp%f[%W]", ""))
+    cleaned_prompt = vim.trim(cleaned_prompt:gsub("%f[%w@]@lsp%f[%W]", ""))
 
     context_tools.get_workspace_symbols(tonumber(source_buf) or 0, send_request)
   else

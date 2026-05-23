@@ -1,7 +1,5 @@
 local M = {}
 
--- TODO: hook into prompt._submit, stash result on state.tagged_files
-
 M.MAX_BYTES = 256 * 1024
 M.MAX_LINES = 2000
 
