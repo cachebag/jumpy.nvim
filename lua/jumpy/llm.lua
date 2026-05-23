@@ -4,9 +4,34 @@ local function get_config()
   return require("jumpy").config
 end
 
+local function build_file_block(path, contents)
+  return string.format("--- FILE: %s ---\n%s\n--- END FILE ---", path, contents)
+end
+
 local function build_messages(context)
-  -- TODO: multi-file user message (--- FILE: path --- blocks) when tagged files present
   local config = get_config()
+
+  local tagged = context.tagged_files
+  if tagged and #tagged > 0 then
+    local parts = {}
+    table.insert(parts, "File type: " .. (context.filetype or "text"))
+    table.insert(parts, "")
+    table.insert(parts, build_file_block(context.primary_path or "current", context.file_contents))
+    for _, file in ipairs(tagged) do
+      table.insert(parts, build_file_block(file.path, table.concat(file.lines, "\n")))
+    end
+    if context.symbols and context.symbols ~= "" then
+      table.insert(parts, context.symbols)
+    end
+    table.insert(parts, "")
+    table.insert(parts, "Instruction: " .. context.prompt)
+    local user_content = table.concat(parts, "\n")
+    local system = config.system_prompt .. "\n\n" .. config.system_prompt_multi_file
+    return {
+      { role = "system", content = system },
+      { role = "user", content = user_content },
+    }
+  end
 
   local user_content = string.format(
     "File type: %s\n\n--- FILE CONTENTS ---\n%s\n--- END FILE ---%s\n\nInstruction: %s",
