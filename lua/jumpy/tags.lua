@@ -23,10 +23,10 @@ local function word_boundary_after(text, pos)
   return not text:sub(pos + 1, pos + 1):match("[%w]")
 end
 
-local function normalize_mention_path(path)
-  path = path:gsub("/+$", "")
-  path = path:gsub("%.$", "")
-  return path
+local function normalize_mention_path(mention_path)
+  mention_path = mention_path:gsub("/+$", "")
+  mention_path = mention_path:gsub("%.$", "")
+  return mention_path
 end
 
 local function mention_remove_len(raw)
@@ -86,8 +86,8 @@ function M.strip_mentions(text)
     if word_boundary_before(stripped, at) then
       local rest = stripped:sub(at + 1)
       local raw = rest:match("^([%.%w%-_/]+)")
-      local path = raw and normalize_mention_path(raw) or nil
-      if path and path ~= "" and not RESERVED[path] and word_boundary_after(stripped, at + #raw) then
+      local norm_path = raw and normalize_mention_path(raw) or nil
+      if norm_path and norm_path ~= "" and not RESERVED[norm_path] and word_boundary_after(stripped, at + #raw) then
         local remove_len = mention_remove_len(raw)
         stripped = stripped:sub(1, at - 1) .. stripped:sub(at + remove_len + 1)
         search_from = at
