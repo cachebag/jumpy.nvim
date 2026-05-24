@@ -1,5 +1,7 @@
 local M = {}
 
+local path = require("jumpy.path")
+
 -- TODO:
 -- Revisit this...
 -- I don't really like it, but it works for now.
@@ -44,23 +46,20 @@ function M.get_workspace_symbols(bufnr, callback)
       return
     end
 
-    local cwd = (vim.uv and vim.uv.cwd and vim.uv.cwd()) or vim.fn.getcwd()
-    if cwd:sub(-1) ~= "/" then
-      cwd = cwd .. "/"
-    end
+    local root = path.project_root()
 
     local out = {}
     local kinds = vim.lsp.protocol.SymbolKind
     local kept = 0
 
     for _, s in ipairs(result or {}) do
-      local path = vim.uri_to_fname(s.location.uri)
-      if STRUCTURAL_KINDS[s.kind] and path:sub(1, #cwd) == cwd then
+      local abs_path = vim.uri_to_fname(s.location.uri)
+      local rel = path.rel_path(abs_path, root)
+      if STRUCTURAL_KINDS[s.kind] and rel ~= abs_path then
         kept = kept + 1
         if kept > MAX_SYMBOLS then
           break
         end
-        local rel = path:sub(#cwd + 1)
         out[#out + 1] =
           string.format("- %s [%s] > %s (%s)", s.name, kinds[s.kind] or "?", s.containerName or "global", rel)
       end

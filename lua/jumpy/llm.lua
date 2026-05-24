@@ -72,34 +72,29 @@ local function is_anthropic()
   return config.provider == "anthropic"
 end
 
+local function build_curl_cmd(body_json, config, extra_headers)
+  local cmd = { "curl", "-s", "-H", "Content-Type: application/json" }
+  for _, h in ipairs(extra_headers or {}) do
+    table.insert(cmd, "-H")
+    table.insert(cmd, h)
+  end
+  table.insert(cmd, "-d")
+  table.insert(cmd, body_json)
+  table.insert(cmd, config.endpoint)
+  return cmd
+end
+
 local function build_curl_cmd_openai(body_json, config)
-  return {
-    "curl",
-    "-s",
-    "-H",
-    "Content-Type: application/json",
-    "-H",
+  return build_curl_cmd(body_json, config, {
     string.format("Authorization: Bearer %s", config.api_key),
-    "-d",
-    body_json,
-    config.endpoint,
-  }
+  })
 end
 
 local function build_curl_cmd_anthropic(body_json, config)
-  return {
-    "curl",
-    "-s",
-    "-H",
-    "Content-Type: application/json",
-    "-H",
+  return build_curl_cmd(body_json, config, {
     string.format("x-api-key: %s", config.api_key),
-    "-H",
     "anthropic-version: 2023-06-01",
-    "-d",
-    body_json,
-    config.endpoint,
-  }
+  })
 end
 
 local function extract_content_openai(parsed)

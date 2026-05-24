@@ -2,6 +2,14 @@ local M = {}
 
 local ns = vim.api.nvim_create_namespace("jumpy")
 
+local function build_virt_lines(added_lines)
+  local virt_lines = {}
+  for _, line in ipairs(added_lines) do
+    table.insert(virt_lines, { { line, "JumpyAdded" } })
+  end
+  return virt_lines
+end
+
 local buf_states = {}
 
 function M.get_state(bufnr)
@@ -60,10 +68,7 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
     end
 
     if #hunk.added_lines > 0 then
-      local virt_lines = {}
-      for _, added_line in ipairs(hunk.added_lines) do
-        table.insert(virt_lines, { { added_line, "JumpyAdded" } })
-      end
+      local virt_lines = build_virt_lines(hunk.added_lines)
 
       local anchor_line = math.min(hunk.old_start - 1 + hunk.old_count - 1, vim.api.nvim_buf_line_count(bufnr) - 1)
       anchor_line = math.max(0, anchor_line)
@@ -82,10 +87,7 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
       end
       display_hunk.extmarks = {}
 
-      local virt_lines = {}
-      for _, added_line in ipairs(hunk.added_lines) do
-        table.insert(virt_lines, { { added_line, "JumpyAdded" } })
-      end
+      local virt_lines = build_virt_lines(hunk.added_lines)
 
       local anchor_line = math.max(0, hunk.old_start - 1)
       anchor_line = math.min(anchor_line, vim.api.nvim_buf_line_count(bufnr) - 1)
@@ -174,10 +176,7 @@ function M.update_hunk_lines(bufnr, hunk_idx, new_added_lines)
   end
 
   if #new_added_lines > 0 then
-    local virt_lines = {}
-    for _, added_line in ipairs(new_added_lines) do
-      table.insert(virt_lines, { { added_line, "JumpyAdded" } })
-    end
+    local virt_lines = build_virt_lines(new_added_lines)
 
     local anchor_line
     if hunk.old_count > 0 then

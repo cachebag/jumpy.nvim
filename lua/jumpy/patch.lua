@@ -1,6 +1,9 @@
 local M = {}
 
 local function split_lines(text)
+  if vim and vim.split then
+    return vim.split(text, "\n", { plain = true })
+  end
   local lines = {}
   local start = 1
   while true do
@@ -14,6 +17,17 @@ local function split_lines(text)
     end
   end
   return lines
+end
+
+local function shallow_copy(t)
+  if vim and vim.deepcopy then
+    return vim.deepcopy(t)
+  end
+  local copy = {}
+  for _, v in ipairs(t) do
+    table.insert(copy, v)
+  end
+  return copy
 end
 
 local function find_lines(haystack, needle)
@@ -84,10 +98,7 @@ function M.parse(text)
 end
 
 local function apply_blocks(original_lines, blocks)
-  local lines = {}
-  for _, l in ipairs(original_lines) do
-    table.insert(lines, l)
-  end
+  local lines = shallow_copy(original_lines)
 
   local unmatched = 0
 

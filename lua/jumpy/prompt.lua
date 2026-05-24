@@ -2,6 +2,7 @@ local M = {}
 
 local context_tools = require("jumpy.context-tools")
 local path = require("jumpy.path")
+local tags = require("jumpy.tags")
 local utils = require("jumpy.utils")
 
 local state = {
@@ -22,7 +23,7 @@ local function index_tagged_files(tagged_files)
   return by_path
 end
 
-local function buffer_for_tagged_file(tags, file)
+local function buffer_for_tagged_file(file)
   if file.bufnr and vim.api.nvim_buf_is_valid(file.bufnr) then
     return file.bufnr
   end
@@ -70,7 +71,7 @@ local function highlight_mentions(buf)
         if prev_ch:match("[%w@]") then
           search_from = at_pos + 1
         else
-          local _, _, token = line:find("^([%w/_.%-]+)", at_pos + 1)
+          local _, _, token = line:find("^(" .. tags.MENTION_CHARS .. "+)", at_pos + 1)
           if token and path_set[token] then
             vim.api.nvim_buf_set_extmark(buf, mention_ns, lnum - 1, at_pos - 1, {
               end_col = at_pos + #token,
@@ -195,7 +196,7 @@ function M._setup_completions(buf)
       local col = vim.fn.col(".")
       local before = line:sub(1, col - 1)
 
-      local query = before:match("@([%w/_.%-]*)$")
+      local query = before:match("@(" .. tags.MENTION_CHARS .. "*)$")
       if not query then
         return
       end
@@ -264,13 +265,12 @@ function M._submit()
   end
 
   local source_buf = state.source_buf
-  local tags = require("jumpy.tags")
 
   local source_lines = state.visual_selection and vim.split(state.visual_selection.text, "\n", { plain = true })
     or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
   local source_name = vim.api.nvim_buf_get_name(source_buf)
-  local source_rel = source_name ~= "" and tags.rel_path(source_name, path.project_root()) or "current"
+  local source_rel = source_name ~= "" and path.rel_path(source_name, path.project_root()) or "current"
 
   local parsed = tags.parse(prompt_text, {
     source = {
@@ -366,7 +366,7 @@ function M._submit()
           for file_path, result in pairs(results) do
             local file = tagged_by_path[file_path]
             if file then
-              local bufnr = buffer_for_tagged_file(tags, file)
+              local bufnr = buffer_for_tagged_file(file)
               if bufnr then
                 local hunks = diff.compute(file.lines, result.lines)
                 if #hunks > 0 then
