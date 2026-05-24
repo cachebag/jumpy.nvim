@@ -1,6 +1,7 @@
 local M = {}
 
 local context_tools = require("jumpy.context-tools")
+local path = require("jumpy.path")
 local utils = require("jumpy.utils")
 
 local state = {
@@ -8,6 +9,7 @@ local state = {
   buf = nil,
   source_buf = nil,
   reprompt_hunk_idx = nil,
+  paths = nil,
 }
 
 local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
@@ -33,22 +35,53 @@ local function highlight_mentions(buf)
   end
   vim.api.nvim_buf_clear_namespace(buf, mention_ns, 0, -1)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  local path_set = {}
+  for _, p in ipairs(state.paths or {}) do
+    path_set[p] = true
+  end
+
   for lnum, line in ipairs(lines) do
     local search_from = 1
     while true do
-      local s, e = line:find("@lsp", search_from, true)
-      if not s then
+      local lsp_start, lsp_end = line:find("@lsp", search_from, true)
+      if not lsp_start then
         break
       end
-      local prev_ch = s > 1 and line:sub(s - 1, s - 1) or ""
-      local next_ch = line:sub(e + 1, e + 1)
+      local prev_ch = lsp_start > 1 and line:sub(lsp_start - 1, lsp_start - 1) or ""
+      local next_ch = line:sub(lsp_end + 1, lsp_end + 1)
       if not prev_ch:match("[%w@]") and not next_ch:match("[%w]") then
-        vim.api.nvim_buf_set_extmark(buf, mention_ns, lnum - 1, s - 1, {
-          end_col = e,
+        vim.api.nvim_buf_set_extmark(buf, mention_ns, lnum - 1, lsp_start - 1, {
+          end_col = lsp_end,
           hl_group = "JumpyMention",
         })
       end
-      search_from = e + 1
+      search_from = lsp_end + 1
+    end
+
+    if next(path_set) ~= nil then
+      search_from = 1
+      while true do
+        local at_pos = line:find("@", search_from, true)
+        if not at_pos then
+          break
+        end
+        local prev_ch = at_pos > 1 and line:sub(at_pos - 1, at_pos - 1) or ""
+        if prev_ch:match("[%w@]") then
+          search_from = at_pos + 1
+        else
+          local _, _, token = line:find("^([%w/_.%-]+)", at_pos + 1)
+          if token and path_set[token] then
+            vim.api.nvim_buf_set_extmark(buf, mention_ns, lnum - 1, at_pos - 1, {
+              end_col = at_pos + #token,
+              hl_group = "JumpyMention",
+            })
+            search_from = at_pos + 1 + #token
+          else
+            search_from = at_pos + 1
+          end
+        end
+      end
     end
   end
 end
@@ -96,6 +129,7 @@ function M.open()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
+  state.paths = path.list_files()
 
   state.visual_selection = is_scoped and utils.get_visual_selection(state.source_buf) or nil
   local title = is_scoped and " jumpy (scoped) " or " jumpy "
@@ -104,6 +138,35 @@ function M.open()
 
   M._set_submit_keymap()
   M._setup_completions(state.buf)
+end
+
+local function build_completion_items(query)
+  local items = {}
+  local PATH_COMPLETION_LIMIT = 50
+
+  if ("lsp"):sub(1, #query) == query then
+    items[#items + 1] = { word = "@lsp", menu = "[jumpy]", equal = 1 }
+  end
+
+  local paths = state.paths or {}
+  local matches
+  if query == "" then
+    matches = paths
+  else
+    local ok, res = pcall(vim.fn.matchfuzzy, paths, query)
+    matches = ok and res or {}
+  end
+
+  local limit = math.min(PATH_COMPLETION_LIMIT, #matches)
+  for i = 1, limit do
+    items[#items + 1] = {
+      word = "@" .. matches[i],
+      abbr = matches[i],
+      menu = "[file]",
+      equal = 1,
+    }
+  end
+  return items
 end
 
 function M._setup_completions(buf)
@@ -119,11 +182,7 @@ function M._setup_completions(buf)
   -- valid word boundary — i.e. exactly what _submit will detect).
   vim.api.nvim_set_hl(0, "JumpyMention", { link = "Special", default = true })
 
-  local completionItems = {
-    { word = "@lsp", menu = "[jumpy]" },
-  }
-
-  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
+  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChangedP", "TextChanged" }, {
     buffer = buf,
     callback = function()
       highlight_mentions(buf)
@@ -135,13 +194,21 @@ function M._setup_completions(buf)
       local line = vim.api.nvim_get_current_line()
       local col = vim.fn.col(".")
       local before = line:sub(1, col - 1)
-      local match = before:match("@%w*$")
 
-      if match then
-        vim.schedule(function()
-          vim.fn.complete(col - #match, completionItems)
-        end)
+      local query = before:match("@([%w/_.%-]*)$")
+      if not query then
+        return
       end
+
+      local items = build_completion_items(query)
+      if #items == 0 then
+        return
+      end
+
+      local start_col = col - #query - 1
+      vim.schedule(function()
+        vim.fn.complete(start_col, items)
+      end)
     end,
   })
 
@@ -158,6 +225,7 @@ function M.reprompt()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = hunk_idx
+  state.paths = path.list_files()
   state.buf, state.win = create_float(" jumpy: reprompt this hunk ")
 
   M._set_submit_keymap()
@@ -202,12 +270,12 @@ function M._submit()
     or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
   local source_name = vim.api.nvim_buf_get_name(source_buf)
-  local source_rel = source_name ~= "" and tags.rel_path(source_name, tags.project_root()) or "current"
+  local source_rel = source_name ~= "" and tags.rel_path(source_name, path.project_root()) or "current"
 
   local parsed = tags.parse(prompt_text, {
     source = {
       path = source_rel,
-      abs_path = source_name ~= "" and tags.normalize_abs(source_name) or nil,
+      abs_path = source_name ~= "" and path.normalize_abs(source_name) or nil,
       lines = source_lines,
       bufnr = source_buf,
     },
@@ -295,8 +363,8 @@ function M._submit()
           local tagged_by_path = index_tagged_files(tagged_files)
           local total_hunks = 0
 
-          for path, result in pairs(results) do
-            local file = tagged_by_path[path]
+          for file_path, result in pairs(results) do
+            local file = tagged_by_path[file_path]
             if file then
               local bufnr = buffer_for_tagged_file(tags, file)
               if bufnr then
@@ -306,7 +374,7 @@ function M._submit()
                   total_hunks = total_hunks + #hunks
                 end
               else
-                vim.notify("jumpy: could not open " .. path .. ", skipping", vim.log.levels.WARN)
+                vim.notify("jumpy: could not open " .. file_path .. ", skipping", vim.log.levels.WARN)
               end
             end
           end
@@ -393,6 +461,7 @@ function M._close()
   end
   state.win = nil
   state.buf = nil
+  state.paths = nil
   vim.cmd("stopinsert")
 end
 
