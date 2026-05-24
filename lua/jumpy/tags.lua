@@ -2,12 +2,21 @@ local path = require("jumpy.path")
 
 local M = {}
 
+local function trim(text)
+  if vim and vim.trim then
+    return vim.trim(text)
+  end
+  return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 M.MAX_BYTES = 256 * 1024
 M.MAX_LINES = 2000
 
 local RESERVED = {
   lsp = true,
 }
+
+M.MENTION_CHARS = "[%.%w%-_/]"
 
 local function word_boundary_before(text, pos)
   if pos <= 1 then
@@ -37,11 +46,11 @@ local function mention_remove_len(raw)
   return #raw
 end
 
-function M.find_mentions(text)
-  local mentions = {}
-  local seen = {}
+-- Walks `text` and calls `on_match(at, raw, norm_path)` for every valid
+-- file mention (non-reserved, correct word boundaries). Returns the
+-- (possibly mutated) text after all callbacks have run.
+local function scan_mentions(text, on_match)
   local search_from = 1
-
   while search_from <= #text do
     local at = text:find("@", search_from, true)
     if not at then
@@ -49,15 +58,12 @@ function M.find_mentions(text)
     end
 
     if word_boundary_before(text, at) then
-      local rest = text:sub(at + 1)
-      local raw = rest:match("^([%.%w%-_/]+)")
+      local raw = text:sub(at + 1):match("^(" .. M.MENTION_CHARS .. "+)")
       local norm_path = raw and normalize_mention_path(raw) or nil
       if norm_path and norm_path ~= "" and not RESERVED[norm_path] and word_boundary_after(text, at + #raw) then
-        if not seen[norm_path] then
-          seen[norm_path] = true
-          table.insert(mentions, norm_path)
-        end
-        search_from = at + #raw + 1
+        local next_pos
+        text, next_pos = on_match(text, at, raw, norm_path)
+        search_from = next_pos
       else
         search_from = at + 1
       end
@@ -65,41 +71,29 @@ function M.find_mentions(text)
       search_from = at + 1
     end
   end
+  return text
+end
 
+function M.find_mentions(text)
+  local mentions = {}
+  local seen = {}
+  scan_mentions(text, function(t, at, raw, norm_path)
+    if not seen[norm_path] then
+      seen[norm_path] = true
+      table.insert(mentions, norm_path)
+    end
+    return t, at + #raw + 1
+  end)
   return mentions
 end
 
-local function trim(text)
-  return (text:gsub("^%s+", ""):gsub("%s+$", ""))
-end
-
 function M.strip_mentions(text)
-  local stripped = text
-  local search_from = 1
-
-  while search_from <= #stripped do
-    local at = stripped:find("@", search_from, true)
-    if not at then
-      break
-    end
-
-    if word_boundary_before(stripped, at) then
-      local rest = stripped:sub(at + 1)
-      local raw = rest:match("^([%.%w%-_/]+)")
-      local norm_path = raw and normalize_mention_path(raw) or nil
-      if norm_path and norm_path ~= "" and not RESERVED[norm_path] and word_boundary_after(stripped, at + #raw) then
-        local remove_len = mention_remove_len(raw)
-        stripped = stripped:sub(1, at - 1) .. stripped:sub(at + remove_len + 1)
-        search_from = at
-      else
-        search_from = at + 1
-      end
-    else
-      search_from = at + 1
-    end
-  end
-
-  return trim((stripped:gsub("%s+", " ")))
+  local stripped = scan_mentions(text, function(t, at, raw, norm_path)
+    local remove_len = mention_remove_len(raw)
+    local next_t = t:sub(1, at - 1) .. t:sub(at + remove_len + 1)
+    return next_t, at
+  end)
+  return trim(stripped:gsub("%s+", " "))
 end
 
 local function slice_lines(lines, count)

@@ -2,6 +2,9 @@ local M = {}
 
 local render = require("jumpy.render")
 
+local MSG_NO_HUNKS = "jumpy: no hunks"
+local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
+
 local function get_active_hunks(bufnr)
   local state = render.get_state(bufnr)
   if not state then
@@ -46,7 +49,7 @@ function M.next_hunk()
   local active = get_active_hunks(bufnr)
 
   if #active == 0 then
-    vim.notify("jumpy: no hunks", vim.log.levels.INFO)
+    vim.notify(MSG_NO_HUNKS, vim.log.levels.INFO)
     return
   end
 
@@ -66,7 +69,7 @@ function M.prev_hunk()
   local active = get_active_hunks(bufnr)
 
   if #active == 0 then
-    vim.notify("jumpy: no hunks", vim.log.levels.INFO)
+    vim.notify(MSG_NO_HUNKS, vim.log.levels.INFO)
     return
   end
 
@@ -85,7 +88,7 @@ function M.accept()
   local hunk_idx = M.hunk_at_cursor()
 
   if not hunk_idx then
-    vim.notify("jumpy: no hunk under cursor", vim.log.levels.WARN)
+    vim.notify(MSG_NO_HUNK_UNDER_CURSOR, vim.log.levels.WARN)
     return
   end
 
@@ -112,7 +115,7 @@ function M.reject()
   local hunk_idx = M.hunk_at_cursor()
 
   if not hunk_idx then
-    vim.notify("jumpy: no hunk under cursor", vim.log.levels.WARN)
+    vim.notify(MSG_NO_HUNK_UNDER_CURSOR, vim.log.levels.WARN)
     return
   end
 
@@ -126,7 +129,7 @@ function M.accept_all()
   local active = get_active_hunks(bufnr)
 
   if #active == 0 then
-    vim.notify("jumpy: no hunks", vim.log.levels.INFO)
+    vim.notify(MSG_NO_HUNKS, vim.log.levels.INFO)
     return
   end
 
@@ -164,7 +167,7 @@ function M.add_hunks_to_quickfix()
   local items = M._transform_hunks_to_quickfix(states)
 
   if #items == 0 then
-    vim.notify("jumpy: no hunks", vim.log.levels.INFO)
+    vim.notify(MSG_NO_HUNKS, vim.log.levels.INFO)
     return
   end
 

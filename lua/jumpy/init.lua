@@ -110,33 +110,24 @@ function M._setup_keymaps()
   local opts = { silent = true }
   local c = M.config.keymaps
 
-  map("n", c.prompt, function()
-    require("jumpy.prompt").open()
-  end, opts)
-  map("n", c.next_hunk, function()
-    require("jumpy.navigate").next_hunk()
-  end, opts)
-  map("n", c.prev_hunk, function()
-    require("jumpy.navigate").prev_hunk()
-  end, opts)
-  map("n", c.accept, function()
-    require("jumpy.navigate").accept()
-  end, opts)
-  map("n", c.reject, function()
-    require("jumpy.navigate").reject()
-  end, opts)
-  map("n", c.accept_all, function()
-    require("jumpy.navigate").accept_all()
-  end, opts)
-  map("n", c.reject_all, function()
-    require("jumpy.navigate").reject_all()
-  end, opts)
-  map("n", c.reprompt, function()
-    require("jumpy.prompt").reprompt()
-  end, opts)
-  map("n", c.quickfix, function()
-    require("jumpy.navigate").add_hunks_to_quickfix()
-  end, opts)
+  local keymaps = {
+    { c.prompt, "jumpy.prompt", "open" },
+    { c.next_hunk, "jumpy.navigate", "next_hunk" },
+    { c.prev_hunk, "jumpy.navigate", "prev_hunk" },
+    { c.accept, "jumpy.navigate", "accept" },
+    { c.reject, "jumpy.navigate", "reject" },
+    { c.accept_all, "jumpy.navigate", "accept_all" },
+    { c.reject_all, "jumpy.navigate", "reject_all" },
+    { c.reprompt, "jumpy.prompt", "reprompt" },
+    { c.quickfix, "jumpy.navigate", "add_hunks_to_quickfix" },
+  }
+
+  for _, km in ipairs(keymaps) do
+    local key, mod, fn = km[1], km[2], km[3]
+    map("n", key, function()
+      require(mod)[fn]()
+    end, opts)
+  end
 end
 
 return M
