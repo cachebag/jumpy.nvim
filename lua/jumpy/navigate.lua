@@ -234,6 +234,52 @@ function M._apply_offset(bufnr, accepted_idx, delta)
   end
 end
 
+local function get_all_active_hunks()
+  local all = {}
+  for bufnr, state in pairs(render.get_all_states()) do
+    for idx, hunk in pairs(state.hunks) do
+      if hunk then
+        table.insert(all, { bufnr = bufnr, idx = idx, hunk = hunk })
+      end
+    end
+  end
+  table.sort(all, function(a, b)
+    local na = vim.api.nvim_buf_get_name(a.bufnr)
+    local nb = vim.api.nvim_buf_get_name(b.bufnr)
+    if na ~= nb then
+      return na < nb
+    end
+    return a.hunk.old_start < b.hunk.old_start
+  end)
+  return all
+end
+
+local function jump_to(bufnr, line)
+  local cur_win = vim.api.nvim_get_current_win()
+  local win_cfg = vim.api.nvim_win_get_config(cur_win)
+  if win_cfg.relative ~= "" then
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_config(win).relative == "" then
+        vim.api.nvim_set_current_win(win)
+        break
+      end
+    end
+  end
+  vim.cmd("normal! m'")
+  vim.api.nvim_win_set_buf(0, bufnr)
+  vim.api.nvim_win_set_cursor(0, { line, 0 })
+end
+
+function M.first_hunk_any_buf()
+  local all = get_all_active_hunks()
+  if #all == 0 then
+    vim.notify(MSG_NO_HUNKS, vim.log.levels.INFO)
+    return
+  end
+  local entry = all[1]
+  jump_to(entry.bufnr, entry.hunk.old_start)
+end
+
 function M._advance_to_next(bufnr)
   local active = get_active_hunks(bufnr)
   if #active > 0 then
@@ -247,6 +293,12 @@ function M._advance_to_next(bufnr)
     vim.api.nvim_win_set_cursor(0, { active[1].hunk.old_start, 0 })
   else
     offset_table[bufnr] = nil
+    local all = get_all_active_hunks()
+    if #all > 0 then
+      jump_to(all[1].bufnr, all[1].hunk.old_start)
+    else
+      vim.cmd("normal! \\<C-o>")
+    end
   end
 end
 

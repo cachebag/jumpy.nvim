@@ -61,6 +61,45 @@ local function parse_search_marker(line)
   return rest
 end
 
+local function normalize_block_path(raw_path)
+  raw_path = raw_path:gsub("^%./", "")
+  raw_path = raw_path:gsub("^path/", "")
+  raw_path = raw_path:gsub("/+", "/")
+  return raw_path
+end
+
+-- Pick file for a SEARCH/REPLACE block: normalized path when it exists in context;
+-- pathless blocks use content match, then primary. An explicit path not in context
+-- is returned as-is so apply_by_file counts those blocks unmatched (never steal
+-- matches from sibling files).
+local function resolve_block_path(block, files_by_path, primary_path)
+  local resolved
+
+  if block.path then
+    local normalized = normalize_block_path(block.path)
+    if files_by_path[normalized] then
+      resolved = normalized
+    else
+      return normalized
+    end
+  end
+
+  if not resolved and #block.search > 0 then
+    for file_path, lines in pairs(files_by_path) do
+      if find_lines(lines, block.search) then
+        resolved = file_path
+        break
+      end
+    end
+  end
+
+  if not resolved then
+    resolved = primary_path
+  end
+
+  return resolved
+end
+
 function M.parse(text)
   local blocks = {}
   local lines = split_lines(text)
@@ -149,7 +188,7 @@ function M.apply_by_file(files_by_path, response_text, primary_path)
 
   local grouped = {}
   for _, block in ipairs(blocks) do
-    local key = block.path or primary_path
+    local key = resolve_block_path(block, files_by_path, primary_path)
     grouped[key] = grouped[key] or {}
     table.insert(grouped[key], block)
   end

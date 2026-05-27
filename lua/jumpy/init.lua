@@ -25,14 +25,15 @@ M.config = {
     "- Do NOT explain",
   }, "\n"),
   system_prompt_multi_file = table.concat({
-    "When multiple files are provided, prefix the SEARCH marker with the file path:",
-    "<<<< SEARCH path/to/file.lua",
+    "When multiple files are provided, prefix SEARCH with the exact path from ",
+    "each --- FILE: ... --- header:",
+    "<<<< SEARCH src/foo.lua",
     "exact existing lines from that file",
     "====",
     "replacement lines",
     ">>>> REPLACE",
     "",
-    "The path must exactly match the path shown in the --- FILE: ... --- header.",
+    "The path after SEARCH must be copied VERBATIM from the --- FILE: ... --- header. Do NOT add any prefix.",
     "You may edit any subset of the provided files. Every SEARCH block MUST include a path.",
   }, "\n"),
   keymaps = {
