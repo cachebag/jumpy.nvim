@@ -265,6 +265,7 @@ local function jump_to(bufnr, line)
       end
     end
   end
+  vim.cmd("normal! m'")
   vim.api.nvim_win_set_buf(0, bufnr)
   vim.api.nvim_win_set_cursor(0, { line, 0 })
 end
@@ -292,6 +293,12 @@ function M._advance_to_next(bufnr)
     vim.api.nvim_win_set_cursor(0, { active[1].hunk.old_start, 0 })
   else
     offset_table[bufnr] = nil
+    local all = get_all_active_hunks()
+    if #all > 0 then
+      jump_to(all[1].bufnr, all[1].hunk.old_start)
+    else
+      vim.cmd("normal! \\<C-o>")
+    end
   end
 end
 
