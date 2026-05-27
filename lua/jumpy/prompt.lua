@@ -173,14 +173,10 @@ end
 function M._setup_completions(buf)
   vim.bo[buf].completeopt = "menu,menuone,noselect"
 
-  -- Disable nvim-cmp in this buffer so it doesn't fight with vim.fn.complete and
-  -- doesn't intercept <CR>.
   pcall(function()
-    require("cmp").setup.buffer({ enabled = false })
+    require("cmp").setup.buffer({ enabled = false }) -- avoids fighting vim.fn.complete
   end)
 
-  -- Highlight group for confirmed mentions (only the actual @lsp token, after a
-  -- valid word boundary — i.e. exactly what _submit will detect).
   vim.api.nvim_set_hl(0, "JumpyMention", { link = "Special", default = true })
 
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChangedP", "TextChanged" }, {
@@ -335,7 +331,6 @@ function M._submit()
       end)
     elseif is_multi_file then
       local context = {
-        file_contents = table.concat(source_lines, "\n"),
         tagged_files = tagged_files,
         primary_path = source_rel,
         prompt = cleaned_prompt,
@@ -390,7 +385,7 @@ function M._submit()
           )
 
           local nav = require("jumpy.navigate")
-          nav.next_hunk()
+          nav.first_hunk_any_buf()
         end)
       end)
     else
