@@ -55,7 +55,7 @@ jobs:
         uses: leafo/gh-actions-luarocks@v4
 
       - name: Cache LuaRocks packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.luarocks
           key: ${{ runner.os }}-luarocks-${{ hashFiles('Makefile') }}
