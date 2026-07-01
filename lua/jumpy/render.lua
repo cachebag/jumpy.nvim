@@ -10,6 +10,13 @@ local function build_virt_lines(added_lines)
   return virt_lines
 end
 
+local function insertion_anchor(bufnr, old_start)
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  local is_eof = old_start > line_count
+  local anchor_line = is_eof and line_count - 1 or old_start - 1
+  return math.max(0, anchor_line), not is_eof
+end
+
 local buf_states = {}
 
 function M.get_state(bufnr)
@@ -89,12 +96,11 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
 
       local virt_lines = build_virt_lines(hunk.added_lines)
 
-      local anchor_line = math.max(0, hunk.old_start - 1)
-      anchor_line = math.min(anchor_line, vim.api.nvim_buf_line_count(bufnr) - 1)
+      local anchor_line, virt_lines_above = insertion_anchor(bufnr, hunk.old_start)
 
       local id = vim.api.nvim_buf_set_extmark(bufnr, ns, anchor_line, 0, {
         virt_lines = virt_lines,
-        virt_lines_above = anchor_line ~= 0,
+        virt_lines_above = virt_lines_above,
         sign_text = "+",
         sign_hl_group = "JumpyAddedSign",
         priority = 100,
@@ -179,17 +185,17 @@ function M.update_hunk_lines(bufnr, hunk_idx, new_added_lines)
     local virt_lines = build_virt_lines(new_added_lines)
 
     local anchor_line
+    local virt_lines_above = false
     if hunk.old_count > 0 then
       anchor_line = math.min(hunk.old_start - 1 + hunk.old_count - 1, vim.api.nvim_buf_line_count(bufnr) - 1)
       anchor_line = math.max(0, anchor_line)
     else
-      anchor_line = math.max(0, hunk.old_start - 1)
-      anchor_line = math.min(anchor_line, vim.api.nvim_buf_line_count(bufnr) - 1)
+      anchor_line, virt_lines_above = insertion_anchor(bufnr, hunk.old_start)
     end
 
     local id = vim.api.nvim_buf_set_extmark(bufnr, ns, anchor_line, 0, {
       virt_lines = virt_lines,
-      virt_lines_above = hunk.old_count == 0 and anchor_line ~= 0,
+      virt_lines_above = virt_lines_above,
       priority = 100,
     })
     table.insert(hunk.extmarks, id)

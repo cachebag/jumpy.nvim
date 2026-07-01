@@ -89,6 +89,7 @@ describe("diff.compute", function()
     local hunks = diff.compute(old, new)
 
     assert.are.equal(1, #hunks)
+    assert.are.equal(1, hunks[1].old_start)
     assert.are.same({ "a" }, hunks[1].added_lines)
   end)
 
@@ -98,7 +99,43 @@ describe("diff.compute", function()
     local hunks = diff.compute(old, new)
 
     assert.are.equal(1, #hunks)
+    assert.are.equal(3, hunks[1].old_start)
     assert.are.same({ "c" }, hunks[1].added_lines)
+  end)
+
+  it("keeps repeated insertion hunks anchored to old-file lines", function()
+    local old = {
+      "local function one()",
+      "end",
+      "",
+      "local function two()",
+      "end",
+      "",
+      "local function three()",
+      "end",
+    }
+    local new = {
+      "--- One.",
+      "local function one()",
+      "end",
+      "",
+      "--- Two.",
+      "local function two()",
+      "end",
+      "",
+      "--- Three.",
+      "local function three()",
+      "end",
+    }
+    local hunks = diff.compute(old, new)
+
+    assert.are.equal(3, #hunks)
+    assert.are.equal(1, hunks[1].old_start)
+    assert.are.equal(4, hunks[2].old_start)
+    assert.are.equal(7, hunks[3].old_start)
+    assert.are.same({ "--- One." }, hunks[1].added_lines)
+    assert.are.same({ "--- Two." }, hunks[2].added_lines)
+    assert.are.same({ "--- Three." }, hunks[3].added_lines)
   end)
 
   it("handles complete replacement", function()
