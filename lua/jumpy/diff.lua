@@ -77,7 +77,7 @@ local function myers_diff(old_lines, new_lines)
 
     if d > 1 then
       if x == prev_x then
-        table.insert(edits, 1, { op = "insert", new_idx = y })
+        table.insert(edits, 1, { op = "insert", old_idx = x + 1, new_idx = y })
         y = y - 1
       else
         table.insert(edits, 1, { op = "delete", old_idx = x })
@@ -120,6 +120,9 @@ function M.compute(old_lines, new_lines)
         current_hunk.old_count = current_hunk.old_count + 1
         table.insert(current_hunk.removed_lines, old_lines[edit.old_idx])
       elseif edit.op == "insert" then
+        if not current_hunk.old_start then
+          current_hunk.old_start = edit.old_idx
+        end
         if not current_hunk.new_start then
           current_hunk.new_start = edit.new_idx
         end

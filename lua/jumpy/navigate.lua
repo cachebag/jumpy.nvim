@@ -5,6 +5,23 @@ local render = require("jumpy.render")
 local MSG_NO_HUNKS = "jumpy: no hunks"
 local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
 
+local function center_cursor()
+  vim.cmd("normal! zz")
+end
+
+local function set_cursor_centered(line)
+  local line_count = vim.api.nvim_buf_line_count(0)
+  local target_line = math.min(math.max(line, 1), line_count)
+  vim.api.nvim_win_set_cursor(0, { target_line, 0 })
+  center_cursor()
+end
+
+local function current_hunk_line(bufnr, idx, hunk)
+  local line = hunk.old_start + M._get_offset(bufnr, idx)
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  return math.min(math.max(line, 1), line_count)
+end
+
 local function get_active_hunks(bufnr)
   local state = render.get_state(bufnr)
   if not state then
@@ -32,8 +49,8 @@ function M.hunk_at_cursor()
 
   for _, entry in ipairs(active) do
     local hunk = entry.hunk
-    local hunk_start = hunk.old_start
-    local hunk_end = hunk.old_start + math.max(hunk.old_count, 1) - 1
+    local hunk_start = current_hunk_line(bufnr, entry.idx, hunk)
+    local hunk_end = hunk_start + math.max(hunk.old_count, 1) - 1
 
     if cursor_line >= hunk_start and cursor_line <= hunk_end then
       return entry.idx
@@ -54,13 +71,14 @@ function M.next_hunk()
   end
 
   for _, entry in ipairs(active) do
-    if entry.hunk.old_start > cursor_line then
-      vim.api.nvim_win_set_cursor(0, { entry.hunk.old_start, 0 })
+    local hunk_line = current_hunk_line(bufnr, entry.idx, entry.hunk)
+    if hunk_line > cursor_line then
+      set_cursor_centered(hunk_line)
       return
     end
   end
 
-  vim.api.nvim_win_set_cursor(0, { active[1].hunk.old_start, 0 })
+  set_cursor_centered(current_hunk_line(bufnr, active[1].idx, active[1].hunk))
 end
 
 function M.prev_hunk()
@@ -74,13 +92,14 @@ function M.prev_hunk()
   end
 
   for i = #active, 1, -1 do
-    if active[i].hunk.old_start < cursor_line then
-      vim.api.nvim_win_set_cursor(0, { active[i].hunk.old_start, 0 })
+    local hunk_line = current_hunk_line(bufnr, active[i].idx, active[i].hunk)
+    if hunk_line < cursor_line then
+      set_cursor_centered(hunk_line)
       return
     end
   end
 
-  vim.api.nvim_win_set_cursor(0, { active[#active].hunk.old_start, 0 })
+  set_cursor_centered(current_hunk_line(bufnr, active[#active].idx, active[#active].hunk))
 end
 
 function M.accept()
@@ -267,7 +286,7 @@ local function jump_to(bufnr, line)
   end
   vim.cmd("normal! m'")
   vim.api.nvim_win_set_buf(0, bufnr)
-  vim.api.nvim_win_set_cursor(0, { line, 0 })
+  set_cursor_centered(line)
 end
 
 function M.first_hunk_any_buf()
@@ -285,12 +304,13 @@ function M._advance_to_next(bufnr)
   if #active > 0 then
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
     for _, entry in ipairs(active) do
-      if entry.hunk.old_start >= cursor_line then
-        vim.api.nvim_win_set_cursor(0, { entry.hunk.old_start, 0 })
+      local hunk_line = current_hunk_line(bufnr, entry.idx, entry.hunk)
+      if hunk_line >= cursor_line then
+        set_cursor_centered(hunk_line)
         return
       end
     end
-    vim.api.nvim_win_set_cursor(0, { active[1].hunk.old_start, 0 })
+    set_cursor_centered(current_hunk_line(bufnr, active[1].idx, active[1].hunk))
   else
     offset_table[bufnr] = nil
     local all = get_all_active_hunks()
