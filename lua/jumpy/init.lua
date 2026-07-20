@@ -5,6 +5,7 @@ M.config = {
   endpoint = nil,
   model = nil,
   api_key = nil,
+  claude_code_command = "claude",
   system_prompt = table.concat({
     "You are a code editor. The user will give you a file and an instruction.",
     "Return ONLY the changed sections as SEARCH/REPLACE blocks.",
@@ -69,6 +70,9 @@ local provider_defaults = {
     model = "claude-sonnet-4-6",
     env_key = "ANTHROPIC_API_KEY",
   },
+  claude_code = {
+    model = "sonnet",
+  },
 }
 
 function M.setup(opts)
@@ -78,7 +82,7 @@ function M.setup(opts)
   if p then
     M.config.endpoint = M.config.endpoint or p.endpoint
     M.config.model = M.config.model or p.model
-    if not M.config.api_key then
+    if p.env_key and not M.config.api_key then
       M.config.api_key = vim.env[p.env_key] or vim.env.JUMPY_API_KEY
     end
   else
