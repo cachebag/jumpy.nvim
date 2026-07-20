@@ -365,6 +365,7 @@ function M._submit()
               if bufnr then
                 local hunks = diff.compute(file.lines, result.lines)
                 if #hunks > 0 then
+                  require("jumpy.navigate")._clear_undo_history(bufnr)
                   render.show(bufnr, hunks, file.lines, result.lines)
                   total_hunks = total_hunks + #hunks
                 end
@@ -427,6 +428,7 @@ function M._submit()
             return
           end
 
+          require("jumpy.navigate")._clear_undo_history(source_buf)
           render.show(source_buf, hunks, source_lines, proposed_lines)
 
           vim.notify(string.format("jumpy: %d hunk(s) proposed", #hunks), vim.log.levels.INFO)
