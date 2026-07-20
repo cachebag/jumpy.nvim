@@ -40,7 +40,7 @@ Some of the existing features are to be fleshed out, but the sole purpose is to 
 - **hunk navigation**: jump between proposed changes with `]h` / `[h`
 - **quickfix integration**: collect pending hunks across buffers into one list
 - **token-efficient**: sends only the targeted edit context, not full-file rewrites
-- **multi-provider**: openrouter, openai, anthropic
+- **multi-provider**: openrouter, openai, Anthropic API, Claude Code subscriptions
 - **`@lsp` context**: pull workspace symbols into the prompt when needed
 - **zero context switch**: no sidebar, no terminal agent, no leaving your file
 
@@ -66,13 +66,31 @@ Very open to PRs, issues, etc.! There is no concrete set of guidelines right now
   "cachebag/jumpy",
   config = function()
     require("jumpy").setup({
-      provider = "anthropic", -- or "openai", "openrouter"
+      provider = "anthropic", -- or "openai", "openrouter", "claude_code"
     })
   end,
 }
 ```
 
 set your API key: `export ANTHROPIC_API_KEY="sk-ant-..."` (or `OPENAI_API_KEY`, `JUMPY_API_KEY` for openrouter).
+
+### Claude Code / Max
+
+Claude Pro and Max subscribers can use Jumpy without an API key. Install Claude Code,
+run `claude login`, then configure Jumpy to use the local CLI:
+
+```lua
+require("jumpy").setup({
+  provider = "claude_code",
+  model = "sonnet", -- optional: uses your Claude Code model selection
+})
+```
+
+Jumpy invokes Claude Code in non-interactive mode with its tools, MCP servers, and
+session persistence disabled. Claude Code only returns proposed SEARCH/REPLACE blocks;
+Jumpy remains the only process that can apply them. Jumpy removes `ANTHROPIC_API_KEY`
+from the Claude Code child process so an inherited API key cannot switch a subscription
+user to API billing. Set `claude_code_command` in `setup()` if `claude` is not on `PATH`.
 
 ## Use
 | Keybind     | Action                                    |
