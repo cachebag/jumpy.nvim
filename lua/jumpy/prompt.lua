@@ -368,11 +368,11 @@ function M._submit()
           -- the freshest lines we can get, not the snapshot from submit time.
           local files_by_path = {}
           for _, file in ipairs(tagged_files) do
-            local lines = file.lines
+            local file_lines = file.lines
             if file.bufnr and vim.api.nvim_buf_is_valid(file.bufnr) then
-              lines = vim.api.nvim_buf_get_lines(file.bufnr, 0, -1, false)
+              file_lines = vim.api.nvim_buf_get_lines(file.bufnr, 0, -1, false)
             end
-            files_by_path[file.path] = lines
+            files_by_path[file.path] = file_lines
           end
 
           local results, total_unmatched = patch.apply_by_file(files_by_path, response_text, source_rel)
@@ -446,8 +446,7 @@ function M._submit()
           -- Full-buffer prompts re-read the buffer so parallel work done in
           -- the meantime is respected; visual-selection prompts keep the
           -- snapshot since they target a fixed region.
-          local original = visual_selection and source_lines
-            or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+          local original = visual_selection and source_lines or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
           local proposed_lines, unmatched = patch.apply(original, response_text)
 
