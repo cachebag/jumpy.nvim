@@ -102,6 +102,10 @@ user to API billing. Set `claude_code_command` in `setup()` if `claude` is not o
 | `<leader>A` | Accept all hunks                          |
 | `<leader>X` | Reject all hunks                          |
 | `<leader>r` | Reprompt the hunk under cursor            |
+| `<leader>q` | Review pending hunks in quickfix          |
+
+In the Jumpy quickfix list, use `a` to accept or `x` to reject the selected
+hunk. Jumpy advances to the next pending hunk, including hunks in other files.
 
 ## License
 
