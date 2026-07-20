@@ -34,6 +34,8 @@ The main difference between jumpy and other tools, like 99, are:
 Some of the existing features are to be fleshed out, but the sole purpose is to know exactly what I am letting the LLM write into my code. I have no interest in letting it change everything, and only _then_ can I go back and review every change. That being said, here are the features of jumpy:
 
 - **inline prompt**: describe a change without leaving the buffer
+- **async & parallel prompts**: requests run in the background — prompt one buffer, move to another and prompt again; each response lands in its own buffer independently (`:JumpyCancel` aborts everything in flight)
+- **multi-file prompts**: `@mention` several files in one prompt and review the cross-file hunks via quickfix
 - **search/replace hunks**: LLM returns only changed sections, not whole files
 - **in-buffer diff review**: proposed edits shown inline with accept/reject before anything is written
 - **per-hunk control**: accept, reject, or reprompt individual hunks
@@ -106,6 +108,8 @@ user to API billing. Set `claude_code_command` in `setup()` if `claude` is not o
 
 In the Jumpy quickfix list, use `a` to accept or `x` to reject the selected
 hunk. Jumpy advances to the next pending hunk, including hunks in other files.
+
+`:JumpyCancel` cancels every request currently in flight.
 
 ## License
 

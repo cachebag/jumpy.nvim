@@ -100,6 +100,9 @@ function M.auto_setup()
   vim.api.nvim_create_user_command("Jumpy", function()
     require("jumpy.prompt").open()
   end, { desc = "Open Jumpy prompt" })
+  vim.api.nvim_create_user_command("JumpyCancel", function()
+    require("jumpy.loading").cancel()
+  end, { desc = "Cancel all in-flight Jumpy requests" })
 end
 
 function M._setup_highlights()
