@@ -4,6 +4,86 @@ local render = require("jumpy.render")
 
 local MSG_NO_HUNKS = "jumpy: no hunks"
 local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
+local offset_table = {}
+local undo_history = {}
+local syncing_undo = {}
+
+local function copy_offsets(bufnr)
+  return vim.deepcopy(offset_table[bufnr] or {})
+end
+
+local function restore_offsets(bufnr, offsets)
+  offset_table[bufnr] = vim.deepcopy(offsets or {})
+end
+
+local function same_lines(a, b)
+  return vim.deep_equal(a, b)
+end
+
+local function sync_undo_state(bufnr)
+  if syncing_undo[bufnr] or not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
+  local history = undo_history[bufnr]
+  if not history then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  for i = #history, 1, -1 do
+    local entry = history[i]
+    if same_lines(lines, entry.before_lines) then
+      syncing_undo[bufnr] = true
+      render.restore(bufnr, entry.before_state)
+      restore_offsets(bufnr, entry.before_offsets)
+      syncing_undo[bufnr] = nil
+      M._refresh_quickfix()
+      return
+    end
+    if same_lines(lines, entry.after_lines) then
+      syncing_undo[bufnr] = true
+      render.restore(bufnr, entry.after_state)
+      restore_offsets(bufnr, entry.after_offsets)
+      syncing_undo[bufnr] = nil
+      M._refresh_quickfix()
+      return
+    end
+  end
+end
+
+M._sync_undo_state = sync_undo_state
+
+local function record_undo_state(bufnr, before_state, before_offsets, before_lines)
+  local history = undo_history[bufnr] or {}
+  table.insert(history, {
+    before_state = before_state,
+    before_offsets = before_offsets,
+    before_lines = before_lines,
+    after_state = render.snapshot(bufnr),
+    after_offsets = copy_offsets(bufnr),
+    after_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
+  })
+  undo_history[bufnr] = history
+end
+
+function M._clear_undo_history(bufnr)
+  undo_history[bufnr] = nil
+  offset_table[bufnr] = nil
+  syncing_undo[bufnr] = nil
+end
+
+vim.api.nvim_create_autocmd("TextChanged", {
+  callback = function(args)
+    sync_undo_state(args.buf)
+  end,
+})
+
+vim.api.nvim_create_autocmd("BufWipeout", {
+  callback = function(args)
+    M._clear_undo_history(args.buf)
+  end,
+})
 
 local function center_cursor()
   vim.cmd("normal! zz")
@@ -113,16 +193,25 @@ function M.accept_hunk(bufnr, hunk_idx)
   end
 
   local offset = M._get_offset(bufnr, hunk_idx)
+  local before_state = render.snapshot(bufnr)
+  local before_offsets = copy_offsets(bufnr)
+  local before_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
   local start_line = hunk.old_start - 1 + offset
   local end_line = start_line + hunk.old_count
 
+  syncing_undo[bufnr] = true
   vim.api.nvim_buf_set_lines(bufnr, start_line, end_line, false, hunk.added_lines)
 
   local delta = #hunk.added_lines - hunk.old_count
   M._apply_offset(bufnr, hunk_idx, delta)
 
   render.clear_hunk(bufnr, hunk_idx)
+  if not render.get_state(bufnr) then
+    offset_table[bufnr] = nil
+  end
+  record_undo_state(bufnr, before_state, before_offsets, before_lines)
+  syncing_undo[bufnr] = nil
   M._refresh_quickfix()
   return true
 end
@@ -177,6 +266,11 @@ function M.accept_all()
     table.insert(reversed, active[i])
   end
 
+  local before_state = render.snapshot(bufnr)
+  local before_offsets = copy_offsets(bufnr)
+  local before_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  syncing_undo[bufnr] = true
   for _, entry in ipairs(reversed) do
     local hunk = entry.hunk
     local start_line = hunk.old_start - 1
@@ -185,6 +279,9 @@ function M.accept_all()
   end
 
   render.clear(bufnr)
+  offset_table[bufnr] = nil
+  record_undo_state(bufnr, before_state, before_offsets, before_lines)
+  syncing_undo[bufnr] = nil
   M._refresh_quickfix()
   vim.notify("jumpy: all hunks accepted", vim.log.levels.INFO)
 end
@@ -335,8 +432,6 @@ function M._setup_quickfix_keymaps()
     desc = "Reject Jumpy hunk",
   })
 end
-
-local offset_table = {}
 
 function M._get_offset(bufnr, hunk_idx)
   if not offset_table[bufnr] then

@@ -19,6 +19,21 @@ end
 
 local buf_states = {}
 
+local function copy_lines(lines)
+  return vim.deepcopy(lines)
+end
+
+local function copy_hunk(hunk)
+  return {
+    removed_lines = copy_lines(hunk.removed_lines),
+    added_lines = copy_lines(hunk.added_lines),
+    old_start = hunk.old_start,
+    old_count = hunk.old_count,
+    new_start = hunk.new_start,
+    new_count = hunk.new_count,
+  }
+end
+
 function M.get_state(bufnr)
   return buf_states[bufnr]
 end
@@ -37,6 +52,26 @@ function M.get_all_states()
   return states
 end
 
+function M.snapshot(bufnr)
+  local state = buf_states[bufnr]
+  if not state then
+    return nil
+  end
+
+  local hunks = {}
+  for idx, hunk in pairs(state.hunks) do
+    if hunk then
+      hunks[idx] = copy_hunk(hunk)
+    end
+  end
+
+  return {
+    hunks = hunks,
+    original_lines = copy_lines(state.original_lines),
+    proposed_lines = copy_lines(state.proposed_lines),
+  }
+end
+
 function M.show(bufnr, hunks, original_lines, proposed_lines)
   M.clear(bufnr)
 
@@ -47,9 +82,16 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
     extmark_ids = {},
   }
 
-  local line_offset = 0
+  local entries = {}
+  for idx, hunk in pairs(hunks) do
+    table.insert(entries, { idx = idx, hunk = hunk })
+  end
+  table.sort(entries, function(a, b)
+    return a.idx < b.idx
+  end)
 
-  for i, hunk in ipairs(hunks) do
+  for _, entry in ipairs(entries) do
+    local i, hunk = entry.idx, entry.hunk
     local display_hunk = {
       removed_lines = hunk.removed_lines,
       added_lines = hunk.added_lines,
@@ -109,10 +151,17 @@ function M.show(bufnr, hunks, original_lines, proposed_lines)
     end
 
     state.hunks[i] = display_hunk
-    line_offset = line_offset + #hunk.added_lines
   end
 
   buf_states[bufnr] = state
+end
+
+function M.restore(bufnr, snapshot)
+  M.clear(bufnr)
+  if not snapshot then
+    return
+  end
+  M.show(bufnr, snapshot.hunks, snapshot.original_lines, snapshot.proposed_lines)
 end
 
 function M.clear(bufnr)
