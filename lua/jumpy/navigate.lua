@@ -102,17 +102,15 @@ function M.prev_hunk()
   set_cursor_centered(current_hunk_line(bufnr, active[#active].idx, active[#active].hunk))
 end
 
-function M.accept()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local hunk_idx = M.hunk_at_cursor()
-
-  if not hunk_idx then
-    vim.notify(MSG_NO_HUNK_UNDER_CURSOR, vim.log.levels.WARN)
-    return
-  end
-
+function M.accept_hunk(bufnr, hunk_idx)
   local state = render.get_state(bufnr)
+  if not state then
+    return false
+  end
   local hunk = state.hunks[hunk_idx]
+  if not hunk then
+    return false
+  end
 
   local offset = M._get_offset(bufnr, hunk_idx)
 
@@ -126,7 +124,30 @@ function M.accept()
 
   render.clear_hunk(bufnr, hunk_idx)
   M._refresh_quickfix()
+  return true
+end
+
+function M.accept()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local hunk_idx = M.hunk_at_cursor()
+
+  if not hunk_idx then
+    vim.notify(MSG_NO_HUNK_UNDER_CURSOR, vim.log.levels.WARN)
+    return
+  end
+
+  M.accept_hunk(bufnr, hunk_idx)
   M._advance_to_next(bufnr)
+end
+
+function M.reject_hunk(bufnr, hunk_idx)
+  local state = render.get_state(bufnr)
+  if not state or not state.hunks[hunk_idx] then
+    return false
+  end
+  render.clear_hunk(bufnr, hunk_idx)
+  M._refresh_quickfix()
+  return true
 end
 
 function M.reject()
@@ -138,8 +159,7 @@ function M.reject()
     return
   end
 
-  render.clear_hunk(bufnr, hunk_idx)
-  M._refresh_quickfix()
+  M.reject_hunk(bufnr, hunk_idx)
   M._advance_to_next(bufnr)
 end
 
@@ -192,20 +212,33 @@ function M.add_hunks_to_quickfix()
 
   vim.fn.setqflist({}, " ", { title = "jumpy:hunks", items = items })
   vim.cmd("copen")
+  M._setup_quickfix_keymaps()
 end
 
-function M._refresh_quickfix()
-  if vim.fn.getqflist({ title = 0 }).title ~= "jumpy:hunks" then
+function M._refresh_quickfix(index)
+  local quickfix = vim.fn.getqflist({ title = 0, idx = 0 })
+  if quickfix.title ~= "jumpy:hunks" then
     return
   end
   local items = M._transform_hunks_to_quickfix(render.get_all_states())
-  vim.fn.setqflist({}, "r", { title = "jumpy:hunks", items = items })
+  if #items == 0 then
+    vim.fn.setqflist({}, "r", { title = "jumpy:hunks", items = {} })
+    vim.cmd("cclose")
+    return
+  end
+
+  local target_index = math.min(index or quickfix.idx, #items)
+  vim.fn.setqflist({}, "r", {
+    title = "jumpy:hunks",
+    items = items,
+    idx = math.max(target_index, 1),
+  })
 end
 
 function M._transform_hunks_to_quickfix(states)
   local items = {}
   for bufnr, state in pairs(states) do
-    for _, hunk in pairs(state.hunks) do
+    for hunk_idx, hunk in pairs(state.hunks) do
       if hunk then
         local text
         if #hunk.added_lines > 0 then
@@ -216,15 +249,91 @@ function M._transform_hunks_to_quickfix(states)
 
         table.insert(items, {
           bufnr = bufnr,
-          lnum = hunk.old_start,
+          lnum = current_hunk_line(bufnr, hunk_idx, hunk),
           col = 1,
           text = text,
+          user_data = { bufnr = bufnr, hunk_idx = hunk_idx },
         })
       end
     end
   end
 
+  table.sort(items, function(a, b)
+    local a_name = vim.api.nvim_buf_get_name(a.bufnr)
+    local b_name = vim.api.nvim_buf_get_name(b.bufnr)
+    if a_name ~= b_name then
+      return a_name < b_name
+    end
+    if a.lnum ~= b.lnum then
+      return a.lnum < b.lnum
+    end
+    return a.user_data.hunk_idx < b.user_data.hunk_idx
+  end)
+
   return items
+end
+
+local function current_quickfix_hunk()
+  local quickfix = vim.fn.getqflist({ title = 0, items = 0, idx = 0 })
+  if quickfix.title ~= "jumpy:hunks" then
+    return nil
+  end
+
+  local item = quickfix.items[quickfix.idx]
+  local user_data = item and item.user_data
+  if type(user_data) ~= "table" then
+    return nil
+  end
+
+  return user_data.bufnr, user_data.hunk_idx, quickfix.idx
+end
+
+local function advance_quickfix(index)
+  local quickfix = vim.fn.getqflist({ title = 0, size = 0 })
+  if quickfix.size == 0 then
+    return
+  end
+  vim.cmd("cc " .. math.min(index, quickfix.size))
+end
+
+function M.accept_quickfix_hunk()
+  local bufnr, hunk_idx, index = current_quickfix_hunk()
+  if not bufnr or not M.accept_hunk(bufnr, hunk_idx) then
+    M._refresh_quickfix(index)
+    vim.notify("jumpy: quickfix hunk is no longer pending", vim.log.levels.WARN)
+    return
+  end
+  M._refresh_quickfix(index)
+  advance_quickfix(index)
+end
+
+function M.reject_quickfix_hunk()
+  local bufnr, hunk_idx, index = current_quickfix_hunk()
+  if not bufnr or not M.reject_hunk(bufnr, hunk_idx) then
+    M._refresh_quickfix(index)
+    vim.notify("jumpy: quickfix hunk is no longer pending", vim.log.levels.WARN)
+    return
+  end
+  M._refresh_quickfix(index)
+  advance_quickfix(index)
+end
+
+function M._setup_quickfix_keymaps()
+  local quickfix_bufnr = vim.fn.getqflist({ qfbufnr = 0 }).qfbufnr
+  if quickfix_bufnr == 0 then
+    return
+  end
+
+  vim.keymap.set("n", "a", M.accept_quickfix_hunk, {
+    buffer = quickfix_bufnr,
+    silent = true,
+    desc = "Accept Jumpy hunk",
+  })
+  vim.keymap.set("n", "x", M.reject_quickfix_hunk, {
+    buffer = quickfix_bufnr,
+    silent = true,
+    desc = "Reject Jumpy hunk",
+  })
 end
 
 local offset_table = {}
