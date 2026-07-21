@@ -21,6 +21,12 @@ local function build_messages(context)
       table.insert(parts, context.symbols)
     end
     table.insert(parts, "")
+    -- Name the active buffer so relative references ("this file", "here")
+    -- resolve. The FILE headers are left verbatim since SEARCH paths must
+    -- match them exactly.
+    if context.primary_path and context.primary_path ~= "" then
+      table.insert(parts, string.format('The current file (what "this file" refers to) is: %s', context.primary_path))
+    end
     table.insert(parts, "Instruction: " .. context.prompt)
     local user_content = table.concat(parts, "\n")
     local system = config.system_prompt .. "\n\n" .. config.system_prompt_multi_file
@@ -66,6 +72,8 @@ local function build_reprompt_messages(context)
     { role = "user", content = user_content },
   }
 end
+
+M._build_messages = build_messages
 
 local function is_anthropic()
   local config = get_config()
