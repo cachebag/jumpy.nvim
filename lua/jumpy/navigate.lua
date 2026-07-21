@@ -1,6 +1,7 @@
 local M = {}
 
 local render = require("jumpy.render")
+local session = require("jumpy.session")
 
 local MSG_NO_HUNKS = "jumpy: no hunks"
 local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
@@ -212,6 +213,7 @@ function M.accept_hunk(bufnr, hunk_idx)
   end
   record_undo_state(bufnr, before_state, before_offsets, before_lines)
   syncing_undo[bufnr] = nil
+  session.mark_hunk(bufnr, hunk_idx, "accepted")
   M._refresh_quickfix()
   return true
 end
@@ -235,6 +237,7 @@ function M.reject_hunk(bufnr, hunk_idx)
     return false
   end
   render.clear_hunk(bufnr, hunk_idx)
+  session.mark_hunk(bufnr, hunk_idx, "rejected")
   M._refresh_quickfix()
   return true
 end
@@ -282,6 +285,7 @@ function M.accept_all()
   offset_table[bufnr] = nil
   record_undo_state(bufnr, before_state, before_offsets, before_lines)
   syncing_undo[bufnr] = nil
+  session.mark_all(bufnr, "accepted")
   M._refresh_quickfix()
   vim.notify("jumpy: all hunks accepted", vim.log.levels.INFO)
 end
@@ -289,12 +293,15 @@ end
 function M.reject_all()
   local bufnr = vim.api.nvim_get_current_buf()
   render.clear(bufnr)
+  session.mark_all(bufnr, "rejected")
   M._refresh_quickfix()
   vim.notify("jumpy: all hunks rejected", vim.log.levels.INFO)
 end
 
 function M.replace_hunk(bufnr, hunk_idx, new_lines)
   render.update_hunk_lines(bufnr, hunk_idx, new_lines)
+  local preview = new_lines[1] and ("+ " .. new_lines[1]) or "(change)"
+  session.update_hunk_preview(bufnr, hunk_idx, preview)
   M._refresh_quickfix()
 end
 
@@ -501,6 +508,21 @@ function M.first_hunk_any_buf()
   end
   local entry = all[1]
   jump_to(entry.bufnr, entry.hunk.old_start)
+end
+
+--- Jump to a specific pending hunk (used by the session sidebar). Returns
+--- whether the hunk still exists in the live render state.
+function M.jump_to_hunk(bufnr, hunk_idx)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local state = render.get_state(bufnr)
+  if not state or not state.hunks[hunk_idx] then
+    return false
+  end
+  local line = current_hunk_line(bufnr, hunk_idx, state.hunks[hunk_idx])
+  jump_to(bufnr, line)
+  return true
 end
 
 function M._advance_to_next(bufnr)

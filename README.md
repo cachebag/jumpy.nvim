@@ -5,11 +5,10 @@
     Inspired by
     <a href="https://github.com/ThePrimeagen/99.git" target="_blank" rel="noopener noreferrer">
       99
-    </a>:
-    I, like Prime, wanted a tool to allow for <i>me</i> to still be in the driver seat if I am going to spawn an AI to edit my code.
+    </a>
   </b>
 </p>
-  
+
 <br>
 
 <img width="1309" height="888" alt="image" src="https://github.com/user-attachments/assets/519cb828-5a3f-4e6d-8173-5c427c414b41" />
@@ -31,34 +30,19 @@ The main difference between jumpy and other tools, like 99, are:
 
 #
 
-Some of the existing features are to be fleshed out, but the sole purpose is to know exactly what I am letting the LLM write into my code. I have no interest in letting it change everything, and only _then_ can I go back and review every change. That being said, here are the features of jumpy:
-
 - **inline prompt**: describe a change without leaving the buffer
-- **async & parallel prompts**: requests run in the background — prompt one buffer, move to another and prompt again; each response lands in its own buffer independently (`:JumpyCancel` aborts everything in flight)
-- **multi-file prompts**: `@mention` several files in one prompt and review the cross-file hunks via quickfix
-- **search/replace hunks**: LLM returns only changed sections, not whole files
+- **multi-line prompt + history**: `<C-CR>` submits, `<CR>` adds a newline, `<Up>`/`<Down>` recall earlier prompts
+- **async & parallel prompts**: requests run in the background; each response lands in its own buffer (`:JumpyCancel` aborts everything in flight)
+- **multi-file prompts**: `@mention` several files in one prompt and review the cross-file hunks
+- **search/replace hunks**: the LLM returns only changed sections, not whole files
 - **in-buffer diff review**: proposed edits shown inline with accept/reject before anything is written
 - **per-hunk control**: accept, reject, or reprompt individual hunks
 - **hunk navigation**: jump between proposed changes with `]h` / `[h`
 - **quickfix integration**: collect pending hunks across buffers into one list
-- **token-efficient**: sends only the targeted edit context, not full-file rewrites
-- **multi-provider**: openrouter, openai, Anthropic API, Claude Code subscriptions
+- **session sidebar**: a panel logging every prompt and its per-file hunk outcomes; jump to, accept/reject, and reprompt from one place (`:JumpySidebar`)
+- **persistent sessions**: sessions are saved per project root and can be reopened later (`:JumpySessions`)
 - **`@lsp` context**: pull workspace symbols into the prompt when needed
-- **zero context switch**: no sidebar, no terminal agent, no leaving your file
-
-#
-
-So the philosophy here is: yes, I still want to handwrite my code _AND_ use AI, but I prefer that I have _full_ control over what the AI is writing. 
-I don't want to have to wait until it finishes in order to review its changes.
-
-## Contributing
-Very open to PRs, issues, etc.! There is no concrete set of guidelines right now. I am quite welcoming to pretty much anything [1]!
-
-[1]: If your PR is very clearly vibe coded slop I am just gonna close it without warning.
-
-**Some notes:**
-- Your PR will be run against the checks here: [`.github/workflows/ci.yml`](https://github.com/cachebag/jumpy.nvim/blob/master/.github/workflows/ci.yml)
-- I may at times use AI to review your PRs. **A human will still read your PR and have final say**
+- **multi-provider**: openrouter, openai, Anthropic API, Claude Code subscriptions
 
 ## Install
 
@@ -74,12 +58,12 @@ Very open to PRs, issues, etc.! There is no concrete set of guidelines right now
 }
 ```
 
-set your API key: `export ANTHROPIC_API_KEY="sk-ant-..."` (or `OPENAI_API_KEY`, `JUMPY_API_KEY` for openrouter).
+Set your API key: `export ANTHROPIC_API_KEY="sk-ant-..."` (or `OPENAI_API_KEY`, `JUMPY_API_KEY` for openrouter).
 
 ### Claude Code / Max
 
 Claude Pro and Max subscribers can use Jumpy without an API key. Install Claude Code,
-run `claude login`, then configure Jumpy to use the local CLI:
+run `claude login`, then:
 
 ```lua
 require("jumpy").setup({
@@ -88,35 +72,61 @@ require("jumpy").setup({
 })
 ```
 
-Jumpy invokes Claude Code in non-interactive mode with its tools, MCP servers, and
-session persistence disabled. Claude Code only returns proposed SEARCH/REPLACE blocks;
-Jumpy remains the only process that can apply them. Jumpy removes `ANTHROPIC_API_KEY`
-from the Claude Code child process so an inherited API key cannot switch a subscription
-user to API billing. Set `claude_code_command` in `setup()` if `claude` is not on `PATH`.
+Jumpy runs Claude Code non-interactively (tools, MCP servers, and session persistence
+disabled) and remains the only process that can apply changes. It removes
+`ANTHROPIC_API_KEY` from the child process so an inherited key cannot switch a
+subscription user to API billing. Set `claude_code_command` if `claude` is not on `PATH`.
 
 ## Use
-| Keybind     | Action                                              |
-| ----------- | --------------------------------------------------- |
-| `<leader>j` | Open prompt                                         |
-| `<C-CR>`    | Submit prompt (insert mode); `<CR>` inserts newline |
-| `<CR>`      | Submit prompt (normal mode)                         |
-| `<Up>` / `<Down>` | Cycle prompt history (session)                |
-| `]h` / `[h` | Next / previous hunk                                |
-| `<leader>a` | Accept hunk                                         |
-| `<leader>x` | Reject hunk                                         |
-| `<leader>A` | Accept all hunks                                    |
-| `<leader>X` | Reject all hunks                                    |
-| `<leader>r` | Reprompt the hunk under cursor                      |
-| `<leader>q` | Review pending hunks in quickfix                    |
 
-In the prompt float, `<CR>` starts a new line and `<C-CR>` sends the request.
-Use `<Up>` / `<Down>` to recall earlier prompts from the current Neovim session
-(including `@file` mentions as typed).
+| Keybind           | Action                                              |
+| ----------------- | --------------------------------------------------- |
+| `<leader>j`       | Open prompt                                          |
+| `<C-CR>`          | Submit prompt (insert mode); `<CR>` inserts newline |
+| `<CR>`            | Submit prompt (normal mode)                          |
+| `<Up>` / `<Down>` | Cycle prompt history (session)                      |
+| `]h` / `[h`       | Next / previous hunk                                 |
+| `<leader>a`       | Accept hunk                                          |
+| `<leader>x`       | Reject hunk                                          |
+| `<leader>A`       | Accept all hunks                                     |
+| `<leader>X`       | Reject all hunks                                     |
+| `<leader>r`       | Reprompt the hunk under cursor                       |
+| `<leader>q`       | Review pending hunks in quickfix                     |
+| `<leader>s`       | Toggle the session sidebar                           |
 
-In the Jumpy quickfix list, use `a` to accept or `x` to reject the selected
-hunk. Jumpy advances to the next pending hunk, including hunks in other files.
+In the quickfix list, `a` accepts and `x` rejects the selected hunk, advancing to
+the next pending hunk (including hunks in other files). `:JumpyCancel` cancels every
+request currently in flight.
 
-`:JumpyCancel` cancels every request currently in flight.
+### Session sidebar
+
+`:JumpySidebar` (`<leader>s`) toggles a panel logging every prompt and the hunks it
+proposed, with each hunk's status. `:JumpySessions` reopens a saved session (sessions
+are persisted per project root under `stdpath("data")/jumpy/sessions/`; reopened ones
+are read-only).
+
+Configure where it opens (handy if a left-side file tree is in the way):
+
+```lua
+require("jumpy").setup({
+  sidebar = {
+    position = "left", -- or "right"
+    width = 42,
+  },
+})
+```
+
+| Key           | Action                                                |
+| ------------- | ----------------------------------------------------- |
+| `<CR>`        | Jump to the file + hunk under the cursor              |
+| `a` / `x`     | Accept / reject the hunk (or all pending on a file)   |
+| `r`           | Reprompt the hunk under the cursor                    |
+| `R`           | Clear the current session                             |
+| `q` / `<Esc>` | Close the sidebar                                     |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

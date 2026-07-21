@@ -37,6 +37,25 @@ local function buffer_for_tagged_file(file)
   return tags.open_buffer(file.abs_path)
 end
 
+-- Build session-log descriptors from a diff hunk list. The idx matches the
+-- render state's hunk key (diff.compute returns a 1..n array), and line/preview
+-- let the sidebar render and jump without the live render state.
+local function hunk_descriptors(hunks)
+  local out = {}
+  for idx, hunk in ipairs(hunks) do
+    local preview
+    if #hunk.added_lines > 0 then
+      preview = "+ " .. hunk.added_lines[1]
+    elseif #hunk.removed_lines > 0 then
+      preview = "- " .. hunk.removed_lines[1]
+    else
+      preview = "(change)"
+    end
+    out[#out + 1] = { idx = idx, line = hunk.old_start, preview = preview }
+  end
+  return out
+end
+
 local function highlight_mentions(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -403,6 +422,16 @@ function M._submit()
 
   push_history(prompt_text)
 
+  local session = require("jumpy.session")
+  local mode = (reprompt_idx and "reprompt")
+    or (is_multi_file and "multi_file")
+    or (visual_selection and "visual")
+    or "buffer"
+  local session_entry = session.record_prompt({
+    text = cleaned_prompt ~= "" and cleaned_prompt or prompt_text,
+    mode = mode,
+  })
+
   local request_opts = { targets = targets, label = source_rel }
 
   local function send_request(symbols)
@@ -489,6 +518,11 @@ function M._submit()
                 if #hunks > 0 then
                   require("jumpy.navigate")._clear_undo_history(bufnr)
                   render.show(bufnr, hunks, original, result.lines)
+                  session.record_result(session_entry, {
+                    path = file_path,
+                    bufnr = bufnr,
+                    hunks = hunk_descriptors(hunks),
+                  })
                   total_hunks = total_hunks + #hunks
                   target_bufs[bufnr] = true
                 end
@@ -564,6 +598,11 @@ function M._submit()
 
           require("jumpy.navigate")._clear_undo_history(source_buf)
           render.show(source_buf, hunks, original, proposed_lines)
+          session.record_result(session_entry, {
+            path = source_rel,
+            bufnr = source_buf,
+            hunks = hunk_descriptors(hunks),
+          })
 
           local nav = require("jumpy.navigate")
           nav._refresh_quickfix()
