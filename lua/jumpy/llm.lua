@@ -161,10 +161,12 @@ function M._build_claude_code_cmd(messages, config)
   return cmd
 end
 
-local function make_claude_code_request(messages, callback)
+local function make_claude_code_request(messages, callback, opts)
+  opts = opts or {}
   local config = get_config()
   local command = config.claude_code_command or "claude"
   local loading = require("jumpy.loading")
+  local requests = require("jumpy.requests")
 
   if vim.fn.executable(command) ~= 1 then
     loading.error("Claude Code CLI not found; install it or set claude_code_command")
@@ -172,8 +174,28 @@ local function make_claude_code_request(messages, callback)
   end
 
   local env = claude_code_env()
-  local cancelled = false
+
+  local request_id = requests.begin({ label = opts.label, targets = opts.targets })
   loading.start()
+
+  -- Every terminal path must release exactly one spinner refcount and drop
+  -- the request from the registry.
+  local finished = false
+  local function finish()
+    if finished then
+      return
+    end
+    finished = true
+    requests.finish(request_id)
+    loading.stop()
+  end
+
+  local function fail(msg)
+    vim.schedule(function()
+      finish()
+      loading.error(msg)
+    end)
+  end
 
   local auth_jid
   auth_jid = vim.fn.jobstart({ command, "auth", "status" }, {
@@ -182,17 +204,12 @@ local function make_claude_code_request(messages, callback)
     stdout_buffered = true,
     stderr_buffered = true,
     on_exit = function(_, exit_code)
-      if not loading.is_active() then
-        cancelled = true
-      end
-      if cancelled then
-        loading.stop()
+      if requests.is_cancelled(request_id) then
+        finish()
         return
       end
       if exit_code ~= 0 then
-        vim.schedule(function()
-          loading.error("Claude Code is not authenticated; run 'claude login' and select your Claude plan")
-        end)
+        fail("Claude Code is not authenticated; run 'claude login' and select your Claude plan")
         return
       end
 
@@ -221,23 +238,18 @@ local function make_claude_code_request(messages, callback)
           end
         end,
         on_exit = function(_, request_exit_code)
-          if not loading.is_active() then
-            cancelled = true
-          end
-          if cancelled then
-            loading.stop()
+          if requests.is_cancelled(request_id) then
+            finish()
             return
           end
 
           local stderr_text = table.concat(stderr_chunks, "\n")
           if request_exit_code ~= 0 then
-            vim.schedule(function()
-              local msg = "Claude Code request failed (exit " .. request_exit_code .. ")"
-              if stderr_text ~= "" then
-                msg = msg .. " — " .. stderr_text
-              end
-              loading.error(msg)
-            end)
+            local msg = "Claude Code request failed (exit " .. request_exit_code .. ")"
+            if stderr_text ~= "" then
+              msg = msg .. " — " .. stderr_text
+            end
+            fail(msg)
             return
           end
 
@@ -245,38 +257,39 @@ local function make_claude_code_request(messages, callback)
           local ok, parsed = pcall(vim.fn.json_decode, raw)
           local content = ok and extract_content_claude_code(parsed) or nil
           if type(content) ~= "string" or content == "" then
-            vim.schedule(function()
-              loading.error("Claude Code returned an invalid response (update the CLI and try again)")
-            end)
+            fail("Claude Code returned an invalid response (update the CLI and try again)")
             return
           end
 
-          loading.stop()
+          finish()
           content = content:gsub("^```[%w]*\n", ""):gsub("\n```%s*$", "")
           callback(content)
         end,
       })
 
       if request_jid <= 0 then
+        finish()
         loading.error("failed to start Claude Code CLI")
       else
-        loading.set_job(request_jid)
+        requests.set_job(request_id, request_jid)
       end
     end,
   })
 
   if auth_jid <= 0 then
+    finish()
     loading.error("failed to start Claude Code CLI")
   else
-    loading.set_job(auth_jid)
+    requests.set_job(request_id, auth_jid)
   end
 end
 
-local function make_request(messages, callback)
+local function make_request(messages, callback, opts)
+  opts = opts or {}
   local config = get_config()
 
   if is_claude_code() then
-    make_claude_code_request(messages, callback)
+    make_claude_code_request(messages, callback, opts)
     return
   end
 
@@ -322,8 +335,29 @@ local function make_request(messages, callback)
   local response_chunks = {}
   local stderr_chunks = {}
   local loading = require("jumpy.loading")
-  local cancelled = false
+  local requests = require("jumpy.requests")
+
+  local request_id = requests.begin({ label = opts.label, targets = opts.targets })
   loading.start()
+
+  -- Every terminal path must release exactly one spinner refcount and drop
+  -- the request from the registry.
+  local finished = false
+  local function finish()
+    if finished then
+      return
+    end
+    finished = true
+    requests.finish(request_id)
+    loading.stop()
+  end
+
+  local function fail(msg)
+    vim.schedule(function()
+      finish()
+      loading.error(msg)
+    end)
+  end
 
   local jid
   jid = vim.fn.jobstart(cmd, {
@@ -346,25 +380,19 @@ local function make_request(messages, callback)
       end
     end,
     on_exit = function(_, exit_code)
-      if not loading.is_active() then
-        cancelled = true
-      end
-
-      if cancelled then
-        loading.stop()
+      if requests.is_cancelled(request_id) then
+        finish()
         return
       end
 
       local stderr_text = table.concat(stderr_chunks, "\n")
 
       if exit_code ~= 0 then
-        vim.schedule(function()
-          local msg = "request failed (curl exit " .. exit_code .. ")"
-          if stderr_text ~= "" then
-            msg = msg .. " — " .. stderr_text
-          end
-          loading.error(msg)
-        end)
+        local msg = "request failed (curl exit " .. exit_code .. ")"
+        if stderr_text ~= "" then
+          msg = msg .. " — " .. stderr_text
+        end
+        fail(msg)
         return
       end
 
@@ -374,17 +402,15 @@ local function make_request(messages, callback)
       if not ok then
         vim.schedule(function()
           local preview = vim.fn.strcharpart(vim.fn.substitute(raw, "\n", " ", "g"), 0, 120)
-          loading.error("response was not JSON: " .. preview)
+          fail("response was not JSON: " .. preview)
         end)
         return
       end
 
       if parsed.error then
-        vim.schedule(function()
-          local err = parsed.error
-          local msg = type(err) == "table" and (err.message or vim.inspect(err)) or tostring(err)
-          loading.error("API error: " .. msg)
-        end)
+        local err = parsed.error
+        local msg = type(err) == "table" and (err.message or vim.inspect(err)) or tostring(err)
+        fail("API error: " .. msg)
         return
       end
 
@@ -396,13 +422,11 @@ local function make_request(messages, callback)
       end
 
       if not content then
-        vim.schedule(function()
-          loading.error("empty response from LLM (check model / response shape)")
-        end)
+        fail("empty response from LLM (check model / response shape)")
         return
       end
 
-      loading.stop()
+      finish()
       content = content:gsub("^```[%w]*\n", ""):gsub("\n```%s*$", "")
 
       callback(content)
@@ -410,18 +434,19 @@ local function make_request(messages, callback)
   })
 
   if jid <= 0 then
+    finish()
     loading.error("failed to start curl — is it installed?")
   else
-    loading.set_job(jid)
+    requests.set_job(request_id, jid)
   end
 end
 
-function M.request(context, callback)
+function M.request(context, callback, opts)
   local messages = build_messages(context)
-  make_request(messages, callback)
+  make_request(messages, callback, opts)
 end
 
-function M.reprompt(context, callback)
+function M.reprompt(context, callback, opts)
   local messages = build_reprompt_messages(context)
   make_request(messages, function(content)
     local patch = require("jumpy.patch")
@@ -432,7 +457,7 @@ function M.reprompt(context, callback)
       end)
     end
     callback(new_lines)
-  end)
+  end, opts)
 end
 
 return M

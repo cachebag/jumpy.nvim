@@ -222,6 +222,7 @@ function M.reprompt()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = hunk_idx
+  state.visual_selection = nil
   state.paths = path.list_files()
   state.buf, state.win = create_float(" jumpy: reprompt this hunk ")
 
@@ -261,8 +262,9 @@ function M._submit()
   end
 
   local source_buf = state.source_buf
+  local visual_selection = state.visual_selection
 
-  local source_lines = state.visual_selection and vim.split(state.visual_selection.text, "\n", { plain = true })
+  local source_lines = visual_selection and vim.split(visual_selection.text, "\n", { plain = true })
     or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
   local source_name = vim.api.nvim_buf_get_name(source_buf)
@@ -291,6 +293,23 @@ function M._submit()
   local is_multi_file = #tagged_files > 1
 
   local llm = require("jumpy.llm")
+  local requests = require("jumpy.requests")
+
+  -- One in-flight request per file: a second request against the same file
+  -- would clobber the first one's pending hunks when it lands.
+  local targets = {}
+  for _, file in ipairs(tagged_files) do
+    local key = requests.target_key(file.bufnr, file.abs_path)
+    if key then
+      if requests.is_target_busy(key) then
+        vim.notify("jumpy: a request is already running for " .. file.path, vim.log.levels.WARN)
+        return
+      end
+      targets[key] = true
+    end
+  end
+
+  local request_opts = { targets = targets, label = source_rel }
 
   local function send_request(symbols)
     symbols = symbols or ""
@@ -328,7 +347,7 @@ function M._submit()
 
           vim.notify("jumpy: hunk updated", vim.log.levels.INFO)
         end)
-      end)
+      end, request_opts)
     elseif is_multi_file then
       local context = {
         tagged_files = tagged_files,
@@ -344,9 +363,16 @@ function M._submit()
           local render = require("jumpy.render")
           local patch = require("jumpy.patch")
 
+          -- The buffer may have been edited while the request was in flight
+          -- (e.g. reviewing hunks from a parallel prompt), so apply against
+          -- the freshest lines we can get, not the snapshot from submit time.
           local files_by_path = {}
           for _, file in ipairs(tagged_files) do
-            files_by_path[file.path] = file.lines
+            local file_lines = file.lines
+            if file.bufnr and vim.api.nvim_buf_is_valid(file.bufnr) then
+              file_lines = vim.api.nvim_buf_get_lines(file.bufnr, 0, -1, false)
+            end
+            files_by_path[file.path] = file_lines
           end
 
           local results, total_unmatched = patch.apply_by_file(files_by_path, response_text, source_rel)
@@ -357,17 +383,20 @@ function M._submit()
 
           local tagged_by_path = index_tagged_files(tagged_files)
           local total_hunks = 0
+          local target_bufs = {}
 
           for file_path, result in pairs(results) do
             local file = tagged_by_path[file_path]
             if file then
               local bufnr = buffer_for_tagged_file(file)
               if bufnr then
-                local hunks = diff.compute(file.lines, result.lines)
+                local original = files_by_path[file_path]
+                local hunks = diff.compute(original, result.lines)
                 if #hunks > 0 then
                   require("jumpy.navigate")._clear_undo_history(bufnr)
-                  render.show(bufnr, hunks, file.lines, result.lines)
+                  render.show(bufnr, hunks, original, result.lines)
                   total_hunks = total_hunks + #hunks
+                  target_bufs[bufnr] = true
                 end
               else
                 vim.notify("jumpy: could not open " .. file_path .. ", skipping", vim.log.levels.WARN)
@@ -380,15 +409,21 @@ function M._submit()
             return
           end
 
+          local nav = require("jumpy.navigate")
+          nav._refresh_quickfix()
+
           vim.notify(
             string.format("jumpy: %d hunk(s) proposed across %d file(s)", total_hunks, vim.tbl_count(results)),
             vim.log.levels.INFO
           )
 
-          local nav = require("jumpy.navigate")
-          nav.first_hunk_any_buf()
+          -- Only steal the cursor if the user is still in one of the target
+          -- buffers; otherwise they may be busy with another prompt/review.
+          if target_bufs[vim.api.nvim_get_current_buf()] then
+            nav.first_hunk_any_buf()
+          end
         end)
-      end)
+      end, request_opts)
     else
       local context = {
         file_contents = table.concat(source_lines, "\n"),
@@ -408,15 +443,20 @@ function M._submit()
           local render = require("jumpy.render")
           local patch = require("jumpy.patch")
 
-          local proposed_lines, unmatched = patch.apply(source_lines, response_text)
+          -- Full-buffer prompts re-read the buffer so parallel work done in
+          -- the meantime is respected; visual-selection prompts keep the
+          -- snapshot since they target a fixed region.
+          local original = visual_selection and source_lines or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+
+          local proposed_lines, unmatched = patch.apply(original, response_text)
 
           if unmatched > 0 then
             vim.notify(string.format("jumpy: %d block(s) could not be matched", unmatched), vim.log.levels.WARN)
           end
 
-          local hunks = diff.compute(source_lines, proposed_lines)
-          if state.visual_selection then
-            local offset = state.visual_selection.start_line - 1
+          local hunks = diff.compute(original, proposed_lines)
+          if visual_selection then
+            local offset = visual_selection.start_line - 1
 
             for _, hunk in ipairs(hunks) do
               hunk.old_start = hunk.old_start + offset
@@ -429,14 +469,18 @@ function M._submit()
           end
 
           require("jumpy.navigate")._clear_undo_history(source_buf)
-          render.show(source_buf, hunks, source_lines, proposed_lines)
-
-          vim.notify(string.format("jumpy: %d hunk(s) proposed", #hunks), vim.log.levels.INFO)
+          render.show(source_buf, hunks, original, proposed_lines)
 
           local nav = require("jumpy.navigate")
-          nav.next_hunk()
+          nav._refresh_quickfix()
+
+          vim.notify(string.format("jumpy: %d hunk(s) proposed in %s", #hunks, source_rel), vim.log.levels.INFO)
+
+          if vim.api.nvim_get_current_buf() == source_buf then
+            nav.next_hunk()
+          end
         end)
-      end)
+      end, request_opts)
     end
   end
 
