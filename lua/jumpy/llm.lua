@@ -161,6 +161,9 @@ function M._build_claude_code_cmd(messages, config)
     table.insert(cmd, "--model")
     table.insert(cmd, config.model)
   end
+  -- End-of-options separator: multi-file prompts start with "--- FILE: ...",
+  -- which the CLI would otherwise parse as an unknown option.
+  table.insert(cmd, "--")
   table.insert(cmd, user_text)
   return cmd
 end

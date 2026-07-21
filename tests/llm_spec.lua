@@ -25,6 +25,7 @@ describe("llm Claude Code command", function()
       "Return only SEARCH/REPLACE blocks.",
       "--model",
       "sonnet",
+      "--",
       "Change this function.",
     }, cmd)
   end)
@@ -48,6 +49,7 @@ describe("llm Claude Code command", function()
       "--no-session-persistence",
       "--system-prompt",
       "system",
+      "--",
       "user",
     }, cmd)
   end)
