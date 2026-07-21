@@ -317,11 +317,13 @@ function M._set_submit_keymap()
     M._submit()
   end, { buffer = state.buf, silent = true })
 
+  -- Buffer edits are forbidden while an expr mapping evaluates (E565), so the
+  -- history swap is deferred with vim.schedule; the pum case returns the key.
   vim.keymap.set({ "i", "n" }, "<Up>", function()
     if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
       return "<Up>"
     end
-    history_prev()
+    vim.schedule(history_prev)
     return ""
   end, { buffer = state.buf, silent = true, expr = true })
 
@@ -329,7 +331,7 @@ function M._set_submit_keymap()
     if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
       return "<Down>"
     end
-    history_next()
+    vim.schedule(history_next)
     return ""
   end, { buffer = state.buf, silent = true, expr = true })
 
