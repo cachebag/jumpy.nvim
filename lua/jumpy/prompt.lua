@@ -11,8 +11,15 @@ local state = {
   source_buf = nil,
   reprompt_hunk_idx = nil,
   paths = nil,
+  history_idx = nil,
+  draft_lines = nil,
 }
 
+-- Session-scoped prompt history (newest at the end).
+local history = {}
+local HISTORY_MAX = 50
+
+local TITLE_HINT = " · Ctrl-CR submit"
 local mention_ns = vim.api.nvim_create_namespace("jumpy_mentions")
 
 local function index_tagged_files(tagged_files)
@@ -87,6 +94,65 @@ local function highlight_mentions(buf)
   end
 end
 
+local function push_history(text)
+  if vim.trim(text) == "" then
+    return
+  end
+  if history[#history] == text then
+    return
+  end
+  history[#history + 1] = text
+  while #history > HISTORY_MAX do
+    table.remove(history, 1)
+  end
+end
+
+local function apply_prompt_lines(lines)
+  if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+    return
+  end
+  if not lines or #lines == 0 then
+    lines = { "" }
+  end
+  vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, lines)
+  if state.win and vim.api.nvim_win_is_valid(state.win) then
+    local last = #lines
+    local col = #lines[last]
+    vim.api.nvim_win_set_cursor(state.win, { last, col })
+  end
+  highlight_mentions(state.buf)
+end
+
+local function history_prev()
+  if #history == 0 then
+    return
+  end
+  if state.history_idx == nil then
+    state.draft_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
+    state.history_idx = #history
+  elseif state.history_idx > 1 then
+    state.history_idx = state.history_idx - 1
+  else
+    return
+  end
+  apply_prompt_lines(vim.split(history[state.history_idx], "\n", { plain = true }))
+end
+
+local function history_next()
+  if state.history_idx == nil then
+    return
+  end
+  if state.history_idx < #history then
+    state.history_idx = state.history_idx + 1
+    apply_prompt_lines(vim.split(history[state.history_idx], "\n", { plain = true }))
+    return
+  end
+  state.history_idx = nil
+  local draft = state.draft_lines or { "" }
+  state.draft_lines = nil
+  apply_prompt_lines(draft)
+end
+
 local function create_float(title, initial_lines)
   local width = math.floor(vim.o.columns * 0.6)
   local height = 5
@@ -109,7 +175,7 @@ local function create_float(title, initial_lines)
     col = col,
     style = "minimal",
     border = "rounded",
-    title = title or " jumpy ",
+    title = title or (" jumpy" .. TITLE_HINT .. " "),
     title_pos = "center",
   })
 
@@ -130,10 +196,12 @@ function M.open()
 
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = nil
+  state.history_idx = nil
+  state.draft_lines = nil
   state.paths = path.list_files()
 
   state.visual_selection = is_scoped and utils.get_visual_selection(state.source_buf) or nil
-  local title = is_scoped and " jumpy (scoped) " or " jumpy "
+  local title = is_scoped and (" jumpy (scoped)" .. TITLE_HINT .. " ") or (" jumpy" .. TITLE_HINT .. " ")
 
   state.buf, state.win = create_float(title)
 
@@ -223,25 +291,47 @@ function M.reprompt()
   state.source_buf = vim.api.nvim_get_current_buf()
   state.reprompt_hunk_idx = hunk_idx
   state.visual_selection = nil
+  state.history_idx = nil
+  state.draft_lines = nil
   state.paths = path.list_files()
-  state.buf, state.win = create_float(" jumpy: reprompt this hunk ")
+  state.buf, state.win = create_float(" jumpy: reprompt" .. TITLE_HINT .. " ")
 
   M._set_submit_keymap()
   M._setup_completions(state.buf)
 end
 
 function M._set_submit_keymap()
+  -- Enter inserts a newline; Ctrl-CR submits. Completion menu still confirms with Enter.
   vim.keymap.set("i", "<CR>", function()
     if vim.fn.pumvisible() == 1 then
       return "<C-y>"
     end
-    vim.schedule(M._submit)
-    return ""
+    return "<CR>"
   end, { buffer = state.buf, silent = true, expr = true })
+
+  vim.keymap.set("i", "<C-CR>", function()
+    vim.schedule(M._submit)
+  end, { buffer = state.buf, silent = true })
 
   vim.keymap.set("n", "<CR>", function()
     M._submit()
   end, { buffer = state.buf, silent = true })
+
+  vim.keymap.set({ "i", "n" }, "<Up>", function()
+    if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
+      return "<Up>"
+    end
+    history_prev()
+    return ""
+  end, { buffer = state.buf, silent = true, expr = true })
+
+  vim.keymap.set({ "i", "n" }, "<Down>", function()
+    if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
+      return "<Down>"
+    end
+    history_next()
+    return ""
+  end, { buffer = state.buf, silent = true, expr = true })
 
   vim.keymap.set("n", "<Esc>", function()
     M._close()
@@ -308,6 +398,8 @@ function M._submit()
       targets[key] = true
     end
   end
+
+  push_history(prompt_text)
 
   local request_opts = { targets = targets, label = source_rel }
 
@@ -503,6 +595,8 @@ function M._close()
   state.win = nil
   state.buf = nil
   state.paths = nil
+  state.history_idx = nil
+  state.draft_lines = nil
   vim.cmd("stopinsert")
 end
 

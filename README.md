@@ -95,16 +95,23 @@ from the Claude Code child process so an inherited API key cannot switch a subsc
 user to API billing. Set `claude_code_command` in `setup()` if `claude` is not on `PATH`.
 
 ## Use
-| Keybind     | Action                                    |
-| ----------- | ----------------------------------------- |
-| `<leader>j` | Open prompt, type your change, hit `<CR>` |
-| `]h` / `[h` | Next / previous hunk                      |
-| `<leader>a` | Accept hunk                               |
-| `<leader>x` | Reject hunk                               |
-| `<leader>A` | Accept all hunks                          |
-| `<leader>X` | Reject all hunks                          |
-| `<leader>r` | Reprompt the hunk under cursor            |
-| `<leader>q` | Review pending hunks in quickfix          |
+| Keybind     | Action                                              |
+| ----------- | --------------------------------------------------- |
+| `<leader>j` | Open prompt                                         |
+| `<C-CR>`    | Submit prompt (insert mode); `<CR>` inserts newline |
+| `<CR>`      | Submit prompt (normal mode)                         |
+| `<Up>` / `<Down>` | Cycle prompt history (session)                |
+| `]h` / `[h` | Next / previous hunk                                |
+| `<leader>a` | Accept hunk                                         |
+| `<leader>x` | Reject hunk                                         |
+| `<leader>A` | Accept all hunks                                    |
+| `<leader>X` | Reject all hunks                                    |
+| `<leader>r` | Reprompt the hunk under cursor                      |
+| `<leader>q` | Review pending hunks in quickfix                    |
+
+In the prompt float, `<CR>` starts a new line and `<C-CR>` sends the request.
+Use `<Up>` / `<Down>` to recall earlier prompts from the current Neovim session
+(including `@file` mentions as typed).
 
 In the Jumpy quickfix list, use `a` to accept or `x` to reject the selected
 hunk. Jumpy advances to the next pending hunk, including hunks in other files.
