@@ -140,6 +140,11 @@ function M._build_claude_code_cmd(messages, config)
     end
   end
 
+  -- Note: we deliberately do NOT pass --bare. In current Claude Code, --bare
+  -- forces Anthropic auth to ANTHROPIC_API_KEY/apiKeyHelper only and never
+  -- reads the OAuth/keychain login, which breaks Pro/Max subscription users
+  -- (the CLI reports "Not logged in"). We still keep the request tool-free,
+  -- MCP-restricted, and session-less via the explicit flags below.
   local cmd = {
     config.claude_code_command or "claude",
     "-p",
@@ -147,7 +152,6 @@ function M._build_claude_code_cmd(messages, config)
     "json",
     "--tools",
     "",
-    "--bare",
     "--strict-mcp-config",
     "--no-session-persistence",
     "--system-prompt",
@@ -271,6 +275,9 @@ local function make_claude_code_request(messages, callback, opts)
         finish()
         loading.error("failed to start Claude Code CLI")
       else
+        -- Jumpy never writes to Claude Code's stdin; close it so the CLI does
+        -- not wait ~3s for piped input ("no stdin data received in 3s").
+        pcall(vim.fn.chanclose, request_jid, "stdin")
         requests.set_job(request_id, request_jid)
       end
     end,
