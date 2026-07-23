@@ -55,6 +55,42 @@ describe("llm Claude Code command", function()
   end)
 end)
 
+describe("llm single-file selection", function()
+  it("sends the whole file plus a marked selection region", function()
+    local msgs = llm._build_messages({
+      filetype = "lua",
+      file_contents = "local a = 1\nlocal b = 2\nlocal c = 3",
+      symbols = "",
+      prompt = "rename b",
+      selection = {
+        start_line = 2,
+        end_line = 2,
+        lines = { "local b = 2" },
+      },
+    })
+
+    local user = msgs[2].content
+    -- full file is present as context
+    assert.is_truthy(user:find("local a = 1", 1, true))
+    assert.is_truthy(user:find("local c = 3", 1, true))
+    -- the selection is called out with its line range
+    assert.is_truthy(user:find("--- SELECTION (lines 2-2) ---", 1, true))
+    assert.is_truthy(user:find("Focus on the SELECTED region", 1, true))
+    assert.is_truthy(user:find("Instruction: rename b", 1, true))
+  end)
+
+  it("omits the selection note when there is no selection", function()
+    local msgs = llm._build_messages({
+      filetype = "lua",
+      file_contents = "local a = 1",
+      symbols = "",
+      prompt = "do it",
+    })
+
+    assert.is_nil(msgs[2].content:find("SELECTION", 1, true))
+  end)
+end)
+
 describe("llm multi-file messages", function()
   it("names the current file so relative references resolve", function()
     local msgs = llm._build_messages({

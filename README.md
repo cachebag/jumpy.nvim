@@ -31,6 +31,7 @@ The main difference between jumpy and other tools, like 99, are:
 #
 
 - **inline prompt**: describe a change without leaving the buffer
+- **selection-scoped edits**: visually select a function (or any region) and prompt — the whole buffer is still sent as context so the model understands the surroundings, while it focuses on your selection
 - **multi-line prompt + history**: `<C-CR>` submits, `<CR>` adds a newline, `<Up>`/`<Down>` recall earlier prompts
 - **async & parallel prompts**: requests run in the background; each response lands in its own buffer (`:JumpyCancel` aborts everything in flight)
 - **multi-file prompts**: `@mention` several files in one prompt and review the cross-file hunks

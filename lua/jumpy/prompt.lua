@@ -399,8 +399,18 @@ function M._submit()
   local source_buf = state.source_buf
   local visual_selection = state.visual_selection
 
-  local source_lines = visual_selection and vim.split(visual_selection.text, "\n", { plain = true })
-    or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+  -- Always send the whole buffer so the model has surrounding context; a visual
+  -- selection just marks the region to focus on (see `selection` in the context
+  -- and jumpy.llm). Edits are patched against the full buffer.
+  local source_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+
+  local selection = visual_selection
+      and {
+        start_line = visual_selection.start_line,
+        end_line = visual_selection.end_line,
+        lines = vim.split(visual_selection.text, "\n", { plain = true }),
+      }
+    or nil
 
   local source_name = vim.api.nvim_buf_get_name(source_buf)
   local source_rel = source_name ~= "" and path.rel_path(source_name, path.project_root()) or "current"
@@ -582,6 +592,7 @@ function M._submit()
         prompt = cleaned_prompt,
         symbols = symbols,
         filetype = filetype,
+        selection = selection,
       }
 
       llm.request(context, function(response_text)
@@ -595,10 +606,10 @@ function M._submit()
           local render = require("jumpy.render")
           local patch = require("jumpy.patch")
 
-          -- Full-buffer prompts re-read the buffer so parallel work done in
-          -- the meantime is respected; visual-selection prompts keep the
-          -- snapshot since they target a fixed region.
-          local original = visual_selection and source_lines or vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+          -- Re-read the buffer so parallel work done while the request was in
+          -- flight is respected. A selection only guided the model; the patch
+          -- and resulting hunks are computed against the whole buffer.
+          local original = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
 
           local proposed_lines, unmatched = patch.apply(original, response_text)
 
@@ -607,13 +618,6 @@ function M._submit()
           end
 
           local hunks = diff.compute(original, proposed_lines)
-          if visual_selection then
-            local offset = visual_selection.start_line - 1
-
-            for _, hunk in ipairs(hunks) do
-              hunk.old_start = hunk.old_start + offset
-            end
-          end
 
           if #hunks == 0 then
             vim.notify("jumpy: no changes proposed", vim.log.levels.INFO)
