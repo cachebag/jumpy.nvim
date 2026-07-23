@@ -51,7 +51,19 @@ local function hunk_descriptors(hunks)
     else
       preview = "(change)"
     end
-    out[#out + 1] = { idx = idx, line = hunk.old_start, preview = preview }
+    out[#out + 1] = {
+      idx = idx,
+      line = hunk.old_start,
+      preview = preview,
+      -- Geometry + content so the sidebar can re-render this diff later
+      -- (e.g. inspect an accepted hunk). See jumpy.inspect.
+      old_start = hunk.old_start,
+      old_count = hunk.old_count,
+      new_start = hunk.new_start,
+      new_count = hunk.new_count,
+      removed_lines = hunk.removed_lines,
+      added_lines = hunk.added_lines,
+    }
   end
   return out
 end
@@ -210,6 +222,12 @@ function M.open()
     return
   end
 
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+    return
+  end
+
   local mode = vim.api.nvim_get_mode().mode
   local is_scoped = mode == "v" or mode == "V" or mode == "\22"
 
@@ -300,6 +318,12 @@ function M._setup_completions(buf)
 end
 
 function M.reprompt()
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+    return
+  end
+
   local nav = require("jumpy.navigate")
   local hunk_idx = nav.hunk_at_cursor()
   if not hunk_idx then

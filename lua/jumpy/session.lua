@@ -149,6 +149,15 @@ function M.record_result(entry, opts)
       status = "pending",
       line = h.line,
       preview = h.preview or "",
+      -- Diff geometry + content, kept so a hunk's before/after can be
+      -- re-rendered later (jumpy.inspect). Optional: older sessions and
+      -- callers that omit it simply won't support inspection.
+      old_start = h.old_start,
+      old_count = h.old_count,
+      new_start = h.new_start,
+      new_count = h.new_count,
+      removed_lines = h.removed_lines,
+      added_lines = h.added_lines,
     }
   end
 
@@ -204,13 +213,19 @@ function M.mark_all(bufnr, status)
   return changed
 end
 
---- Keep a live hunk's preview in sync when it is reprompted in place.
-function M.update_hunk_preview(bufnr, idx, preview)
+--- Keep a live hunk's preview (and, if given, its replacement content) in sync
+--- when it is reprompted in place.
+function M.update_hunk_preview(bufnr, idx, preview, added_lines)
   local result = live_result_for_buf(bufnr)
   if not result or not result.hunks[idx] then
     return false
   end
-  result.hunks[idx].preview = preview or result.hunks[idx].preview
+  local hunk = result.hunks[idx]
+  hunk.preview = preview or hunk.preview
+  if added_lines then
+    hunk.added_lines = added_lines
+    hunk.new_count = #added_lines
+  end
   notify()
   save()
   return true

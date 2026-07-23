@@ -2,6 +2,17 @@ local M = {}
 
 local render = require("jumpy.render")
 local session = require("jumpy.session")
+local utils = require("jumpy.utils")
+
+--- Guard cursor-based actions so invoking them from the sidebar or another
+--- special buffer gives a clear hint instead of a confusing "no hunks".
+local function guard_source()
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+  end
+  return ok
+end
 
 local MSG_NO_HUNKS = "jumpy: no hunks"
 local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
@@ -142,6 +153,9 @@ function M.hunk_at_cursor()
 end
 
 function M.next_hunk()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local active = get_active_hunks(bufnr)
@@ -163,6 +177,9 @@ function M.next_hunk()
 end
 
 function M.prev_hunk()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local active = get_active_hunks(bufnr)
@@ -219,6 +236,9 @@ function M.accept_hunk(bufnr, hunk_idx)
 end
 
 function M.accept()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local hunk_idx = M.hunk_at_cursor()
 
@@ -243,6 +263,9 @@ function M.reject_hunk(bufnr, hunk_idx)
 end
 
 function M.reject()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local hunk_idx = M.hunk_at_cursor()
 
@@ -256,6 +279,9 @@ function M.reject()
 end
 
 function M.accept_all()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local active = get_active_hunks(bufnr)
 
@@ -291,6 +317,9 @@ function M.accept_all()
 end
 
 function M.reject_all()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   render.clear(bufnr)
   session.mark_all(bufnr, "rejected")
@@ -301,7 +330,7 @@ end
 function M.replace_hunk(bufnr, hunk_idx, new_lines)
   render.update_hunk_lines(bufnr, hunk_idx, new_lines)
   local preview = new_lines[1] and ("+ " .. new_lines[1]) or "(change)"
-  session.update_hunk_preview(bufnr, hunk_idx, preview)
+  session.update_hunk_preview(bufnr, hunk_idx, preview, new_lines)
   M._refresh_quickfix()
 end
 

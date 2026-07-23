@@ -107,15 +107,26 @@ local function build_lines()
   local entries = sess and sess.entries or {}
 
   if state.readonly then
-    add(truncate("jumpy session (saved · read-only)", width), nil, "JumpySessionBanner")
+    add(truncate("  jumpy · saved session (read-only)", width), nil, "JumpySessionBanner")
   else
-    add(truncate("jumpy session", width), nil, "JumpySessionBanner")
+    add(truncate("  jumpy · session", width), nil, "JumpySessionBanner")
+  end
+  if state.readonly then
+    add(truncate("  ⏎ open   ⇥/⇧⇥ cycle   q quit", width), nil, "JumpySessionHint")
+  else
+    add(
+      truncate("  ⏎ open   ⇥/⇧⇥ cycle   a/x accept·reject   r reprompt   q quit", width),
+      nil,
+      "JumpySessionHint"
+    )
   end
   add(string.rep("─", width - 1), nil, "JumpySessionBanner")
 
   if #entries == 0 then
     add("")
     add("  No jumpy activity yet.")
+    add("")
+    add(truncate("  Run a prompt with <leader>j to get started.", width), nil, "JumpySessionHint")
     return lines, targets, highlights
   end
 
@@ -144,6 +155,8 @@ local function build_lines()
           idx = item.idx,
           path = result.path,
           line = item.hunk.line,
+          hunk = item.hunk,
+          status = item.hunk.status,
         }, st.hl)
       end
     end
@@ -193,32 +206,101 @@ local function focus_editor_window()
   return true
 end
 
-local function open_readonly_target(target)
+--- Make an editor window current and show the target's file, returning the
+--- buffer number (or nil). Prefers the live buffer; falls back to the path.
+local function editor_open(target)
+  focus_editor_window()
+  if target.bufnr and vim.api.nvim_buf_is_valid(target.bufnr) then
+    vim.api.nvim_win_set_buf(0, target.bufnr)
+    return target.bufnr
+  end
   if not target.path then
-    return
+    return nil
   end
   local root = (state.readonly and state.readonly.root) or require("jumpy.path").project_root()
   local abs = target.path
   if not abs:match("^/") then
     abs = root .. "/" .. target.path
   end
-  focus_editor_window()
   vim.cmd("edit " .. vim.fn.fnameescape(abs))
-  if target.line then
-    pcall(vim.api.nvim_win_set_cursor, 0, { target.line, 0 })
-    vim.cmd("normal! zz")
-  end
+  return vim.api.nvim_get_current_buf()
 end
 
-local function first_pending_idx(result)
-  local best
-  for _, item in ipairs(sorted_hunks(result)) do
-    if item.hunk.status == "pending" then
-      best = item.idx
-      break
-    end
+--- Is this hunk still an unresolved hunk in the live diff render? If so, the
+--- red/green accept/reject overlay is already shown and we should jump to it
+--- rather than paint the yellow inspect overlay on top.
+local function live_pending(target)
+  if state.readonly or target.kind ~= "hunk" then
+    return false
   end
-  return best
+  if not (target.bufnr and vim.api.nvim_buf_is_valid(target.bufnr)) then
+    return false
+  end
+  local ok, render = pcall(require, "jumpy.render")
+  if not ok then
+    return false
+  end
+  local st = render.get_state(target.bufnr)
+  return st ~= nil and st.hunks[target.idx] ~= nil
+end
+
+--- Show a hunk's before/after in the editor. `keep_focus` returns the cursor to
+--- the sidebar afterwards (used while cycling); otherwise focus stays in the
+--- editor (used on <CR>).
+local function preview_target(target, keep_focus)
+  local inspect = require("jumpy.inspect")
+  inspect.clear_all()
+
+  if not target or (target.kind ~= "hunk" and target.kind ~= "file") then
+    return
+  end
+
+  local sidebar_win = state.win
+
+  -- Live, still-pending hunk: reuse the existing diff overlay + navigation.
+  if live_pending(target) then
+    local navigate = require("jumpy.navigate")
+    focus_editor_window()
+    navigate.jump_to_hunk(target.bufnr, target.idx)
+    if keep_focus and sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+      vim.api.nvim_set_current_win(sidebar_win)
+    end
+    return
+  end
+
+  if target.kind ~= "hunk" or not target.hunk or not target.hunk.old_start then
+    -- No geometry to inspect (a file row, or a pre-enrichment session): just
+    -- open the file at the recorded line.
+    local editor_win = vim.api.nvim_get_current_win()
+    if editor_open(target) and target.line then
+      pcall(vim.api.nvim_win_set_cursor, editor_win, { target.line, 0 })
+      vim.api.nvim_win_call(editor_win, function()
+        vim.cmd("normal! zz")
+      end)
+    end
+    if keep_focus and sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+      vim.api.nvim_set_current_win(sidebar_win)
+    end
+    return
+  end
+
+  local bufnr = editor_open(target)
+  if not bufnr then
+    return
+  end
+  local editor_win = vim.api.nvim_get_current_win()
+  local anchor = inspect.show(bufnr, target.hunk, target.status or target.hunk.status)
+  if anchor then
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
+    pcall(vim.api.nvim_win_set_cursor, editor_win, { math.min(anchor, line_count), 0 })
+    vim.api.nvim_win_call(editor_win, function()
+      vim.cmd("normal! zz")
+    end)
+  end
+
+  if keep_focus and sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    vim.api.nvim_set_current_win(sidebar_win)
+  end
 end
 
 local function target_at_cursor()
@@ -229,32 +311,59 @@ local function target_at_cursor()
   return state.targets[lnum]
 end
 
+--- Open the target and move focus into the editor.
 local function on_enter()
   local target = target_at_cursor()
   if not target then
     return
   end
+  preview_target(target, false)
+end
 
-  if state.readonly then
-    if target.kind == "hunk" or target.kind == "file" then
-      open_readonly_target(target)
+--- Ordered sidebar line numbers that hold a hunk target.
+local function hunk_lnums()
+  local arr = {}
+  for lnum, target in pairs(state.targets) do
+    if target.kind == "hunk" then
+      arr[#arr + 1] = lnum
     end
+  end
+  table.sort(arr)
+  return arr
+end
+
+--- Move to the next/prev hunk row and preview it without leaving the sidebar.
+local function cycle(dir)
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+    return
+  end
+  local arr = hunk_lnums()
+  if #arr == 0 then
     return
   end
 
-  local navigate = require("jumpy.navigate")
-  if target.kind == "hunk" then
-    focus_editor_window()
-    if not navigate.jump_to_hunk(target.bufnr, target.idx) then
-      vim.notify("jumpy: hunk is no longer pending", vim.log.levels.WARN)
+  local cur = vim.api.nvim_win_get_cursor(state.win)[1]
+  local target_lnum
+  if dir > 0 then
+    for _, lnum in ipairs(arr) do
+      if lnum > cur then
+        target_lnum = lnum
+        break
+      end
     end
-  elseif target.kind == "file" and target.result then
-    local idx = first_pending_idx(target.result)
-    if idx then
-      focus_editor_window()
-      navigate.jump_to_hunk(target.bufnr, idx)
+    target_lnum = target_lnum or arr[1]
+  else
+    for i = #arr, 1, -1 do
+      if arr[i] < cur then
+        target_lnum = arr[i]
+        break
+      end
     end
+    target_lnum = target_lnum or arr[#arr]
   end
+
+  pcall(vim.api.nvim_win_set_cursor, state.win, { target_lnum, 0 })
+  preview_target(state.targets[target_lnum], true)
 end
 
 local function act_on_target(status)
@@ -283,6 +392,9 @@ local function act_on_target(status)
       end
     end
   end
+
+  -- Live geometry just shifted; drop any stale inspect overlay.
+  require("jumpy.inspect").clear_all()
 end
 
 local function on_reprompt()
@@ -303,6 +415,12 @@ end
 local function setup_keymaps()
   local opts = { buffer = state.buf, silent = true, nowait = true }
   vim.keymap.set("n", "<CR>", on_enter, opts)
+  vim.keymap.set("n", "<Tab>", function()
+    cycle(1)
+  end, opts)
+  vim.keymap.set("n", "<S-Tab>", function()
+    cycle(-1)
+  end, opts)
   vim.keymap.set("n", "a", function()
     act_on_target("accepted")
   end, opts)
@@ -355,6 +473,9 @@ function M._teardown()
     state.unsubscribe()
     state.unsubscribe = nil
   end
+  pcall(function()
+    require("jumpy.inspect").clear_all()
+  end)
   state.win = nil
   state.buf = nil
   state.targets = {}

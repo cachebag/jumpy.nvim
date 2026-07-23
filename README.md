@@ -105,6 +105,10 @@ proposed, with each hunk's status. `:JumpySessions` reopens a saved session (ses
 are persisted per project root under `stdpath("data")/jumpy/sessions/`; reopened ones
 are read-only).
 
+Cycle through a session's hunks with `<Tab>` / `<S-Tab>`: each one is previewed in
+the buffer with a yellow inline before/after overlay — including hunks you've already
+accepted — so you can see exactly what changed without leaving the sidebar.
+
 Configure where it opens (handy if a left-side file tree is in the way):
 
 ```lua
@@ -116,13 +120,14 @@ require("jumpy").setup({
 })
 ```
 
-| Key           | Action                                                |
-| ------------- | ----------------------------------------------------- |
-| `<CR>`        | Jump to the file + hunk under the cursor              |
-| `a` / `x`     | Accept / reject the hunk (or all pending on a file)   |
-| `r`           | Reprompt the hunk under the cursor                    |
-| `R`           | Clear the current session                             |
-| `q` / `<Esc>` | Close the sidebar                                     |
+| Key             | Action                                                     |
+| --------------- | ---------------------------------------------------------- |
+| `<CR>`          | Open the file + hunk under the cursor (focus the editor)   |
+| `<Tab>` / `<S-Tab>` | Cycle to the next / prev hunk and preview it inline    |
+| `a` / `x`       | Accept / reject the hunk (or all pending on a file)        |
+| `r`             | Reprompt the hunk under the cursor                         |
+| `R`             | Clear the current session                                  |
+| `q` / `<Esc>`   | Close the sidebar                                          |
 
 ## Contributing
 

@@ -139,4 +139,47 @@ describe("session log", function()
     assert.is_true(session.update_hunk_preview(1, 1, "new"))
     assert.are.equal("new", result_of(entry, 1).hunks[1].preview)
   end)
+
+  it("persists diff geometry so a hunk can be re-rendered later", function()
+    local entry = session.record_prompt({ text = "x", mode = "buffer" })
+    session.record_result(entry, {
+      path = "a.lua",
+      bufnr = 1,
+      hunks = {
+        {
+          idx = 1,
+          line = 10,
+          preview = "+ foo",
+          old_start = 10,
+          old_count = 2,
+          new_start = 10,
+          new_count = 1,
+          removed_lines = { "old one", "old two" },
+          added_lines = { "new one" },
+        },
+      },
+    })
+
+    local hunk = result_of(entry, 1).hunks[1]
+    assert.are.equal(10, hunk.old_start)
+    assert.are.equal(2, hunk.old_count)
+    assert.are.equal(1, hunk.new_count)
+    assert.are.same({ "old one", "old two" }, hunk.removed_lines)
+    assert.are.same({ "new one" }, hunk.added_lines)
+  end)
+
+  it("update_hunk_preview can refresh replacement content too", function()
+    local entry = session.record_prompt({ text = "x", mode = "buffer" })
+    session.record_result(entry, {
+      path = "a.lua",
+      bufnr = 1,
+      hunks = { { idx = 1, line = 1, preview = "old", added_lines = { "a" }, new_count = 1, old_start = 1 } },
+    })
+
+    assert.is_true(session.update_hunk_preview(1, 1, "+ b", { "b", "c" }))
+    local hunk = result_of(entry, 1).hunks[1]
+    assert.are.equal("+ b", hunk.preview)
+    assert.are.same({ "b", "c" }, hunk.added_lines)
+    assert.are.equal(2, hunk.new_count)
+  end)
 end)
