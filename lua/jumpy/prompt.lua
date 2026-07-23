@@ -37,6 +37,37 @@ local function buffer_for_tagged_file(file)
   return tags.open_buffer(file.abs_path)
 end
 
+-- Build session-log descriptors from a diff hunk list. The idx matches the
+-- render state's hunk key (diff.compute returns a 1..n array), and line/preview
+-- let the sidebar render and jump without the live render state.
+local function hunk_descriptors(hunks)
+  local out = {}
+  for idx, hunk in ipairs(hunks) do
+    local preview
+    if #hunk.added_lines > 0 then
+      preview = "+ " .. hunk.added_lines[1]
+    elseif #hunk.removed_lines > 0 then
+      preview = "- " .. hunk.removed_lines[1]
+    else
+      preview = "(change)"
+    end
+    out[#out + 1] = {
+      idx = idx,
+      line = hunk.old_start,
+      preview = preview,
+      -- Geometry + content so the sidebar can re-render this diff later
+      -- (e.g. inspect an accepted hunk). See jumpy.inspect.
+      old_start = hunk.old_start,
+      old_count = hunk.old_count,
+      new_start = hunk.new_start,
+      new_count = hunk.new_count,
+      removed_lines = hunk.removed_lines,
+      added_lines = hunk.added_lines,
+    }
+  end
+  return out
+end
+
 local function highlight_mentions(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -191,6 +222,12 @@ function M.open()
     return
   end
 
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+    return
+  end
+
   local mode = vim.api.nvim_get_mode().mode
   local is_scoped = mode == "v" or mode == "V" or mode == "\22"
 
@@ -281,6 +318,12 @@ function M._setup_completions(buf)
 end
 
 function M.reprompt()
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+    return
+  end
+
   local nav = require("jumpy.navigate")
   local hunk_idx = nav.hunk_at_cursor()
   if not hunk_idx then
@@ -317,11 +360,13 @@ function M._set_submit_keymap()
     M._submit()
   end, { buffer = state.buf, silent = true })
 
+  -- Buffer edits are forbidden while an expr mapping evaluates (E565), so the
+  -- history swap is deferred with vim.schedule; the pum case returns the key.
   vim.keymap.set({ "i", "n" }, "<Up>", function()
     if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
       return "<Up>"
     end
-    history_prev()
+    vim.schedule(history_prev)
     return ""
   end, { buffer = state.buf, silent = true, expr = true })
 
@@ -329,7 +374,7 @@ function M._set_submit_keymap()
     if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
       return "<Down>"
     end
-    history_next()
+    vim.schedule(history_next)
     return ""
   end, { buffer = state.buf, silent = true, expr = true })
 
@@ -400,6 +445,16 @@ function M._submit()
   end
 
   push_history(prompt_text)
+
+  local session = require("jumpy.session")
+  local mode = (reprompt_idx and "reprompt")
+    or (is_multi_file and "multi_file")
+    or (visual_selection and "visual")
+    or "buffer"
+  local session_entry = session.record_prompt({
+    text = cleaned_prompt ~= "" and cleaned_prompt or prompt_text,
+    mode = mode,
+  })
 
   local request_opts = { targets = targets, label = source_rel }
 
@@ -487,6 +542,11 @@ function M._submit()
                 if #hunks > 0 then
                   require("jumpy.navigate")._clear_undo_history(bufnr)
                   render.show(bufnr, hunks, original, result.lines)
+                  session.record_result(session_entry, {
+                    path = file_path,
+                    bufnr = bufnr,
+                    hunks = hunk_descriptors(hunks),
+                  })
                   total_hunks = total_hunks + #hunks
                   target_bufs[bufnr] = true
                 end
@@ -562,6 +622,11 @@ function M._submit()
 
           require("jumpy.navigate")._clear_undo_history(source_buf)
           render.show(source_buf, hunks, original, proposed_lines)
+          session.record_result(session_entry, {
+            path = source_rel,
+            bufnr = source_buf,
+            hunks = hunk_descriptors(hunks),
+          })
 
           local nav = require("jumpy.navigate")
           nav._refresh_quickfix()

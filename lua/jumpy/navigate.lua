@@ -1,6 +1,18 @@
 local M = {}
 
 local render = require("jumpy.render")
+local session = require("jumpy.session")
+local utils = require("jumpy.utils")
+
+--- Guard cursor-based actions so invoking them from the sidebar or another
+--- special buffer gives a clear hint instead of a confusing "no hunks".
+local function guard_source()
+  local ok, reason = utils.check_source_buffer()
+  if not ok then
+    vim.notify(reason, vim.log.levels.WARN)
+  end
+  return ok
+end
 
 local MSG_NO_HUNKS = "jumpy: no hunks"
 local MSG_NO_HUNK_UNDER_CURSOR = "jumpy: no hunk under cursor"
@@ -141,6 +153,9 @@ function M.hunk_at_cursor()
 end
 
 function M.next_hunk()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local active = get_active_hunks(bufnr)
@@ -162,6 +177,9 @@ function M.next_hunk()
 end
 
 function M.prev_hunk()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local active = get_active_hunks(bufnr)
@@ -212,11 +230,15 @@ function M.accept_hunk(bufnr, hunk_idx)
   end
   record_undo_state(bufnr, before_state, before_offsets, before_lines)
   syncing_undo[bufnr] = nil
+  session.mark_hunk(bufnr, hunk_idx, "accepted")
   M._refresh_quickfix()
   return true
 end
 
 function M.accept()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local hunk_idx = M.hunk_at_cursor()
 
@@ -235,11 +257,15 @@ function M.reject_hunk(bufnr, hunk_idx)
     return false
   end
   render.clear_hunk(bufnr, hunk_idx)
+  session.mark_hunk(bufnr, hunk_idx, "rejected")
   M._refresh_quickfix()
   return true
 end
 
 function M.reject()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local hunk_idx = M.hunk_at_cursor()
 
@@ -253,6 +279,9 @@ function M.reject()
 end
 
 function M.accept_all()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local active = get_active_hunks(bufnr)
 
@@ -282,19 +311,26 @@ function M.accept_all()
   offset_table[bufnr] = nil
   record_undo_state(bufnr, before_state, before_offsets, before_lines)
   syncing_undo[bufnr] = nil
+  session.mark_all(bufnr, "accepted")
   M._refresh_quickfix()
   vim.notify("jumpy: all hunks accepted", vim.log.levels.INFO)
 end
 
 function M.reject_all()
+  if not guard_source() then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   render.clear(bufnr)
+  session.mark_all(bufnr, "rejected")
   M._refresh_quickfix()
   vim.notify("jumpy: all hunks rejected", vim.log.levels.INFO)
 end
 
 function M.replace_hunk(bufnr, hunk_idx, new_lines)
   render.update_hunk_lines(bufnr, hunk_idx, new_lines)
+  local preview = new_lines[1] and ("+ " .. new_lines[1]) or "(change)"
+  session.update_hunk_preview(bufnr, hunk_idx, preview, new_lines)
   M._refresh_quickfix()
 end
 
@@ -501,6 +537,21 @@ function M.first_hunk_any_buf()
   end
   local entry = all[1]
   jump_to(entry.bufnr, entry.hunk.old_start)
+end
+
+--- Jump to a specific pending hunk (used by the session sidebar). Returns
+--- whether the hunk still exists in the live render state.
+function M.jump_to_hunk(bufnr, hunk_idx)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local state = render.get_state(bufnr)
+  if not state or not state.hunks[hunk_idx] then
+    return false
+  end
+  local line = current_hunk_line(bufnr, hunk_idx, state.hunks[hunk_idx])
+  jump_to(bufnr, line)
+  return true
 end
 
 function M._advance_to_next(bufnr)

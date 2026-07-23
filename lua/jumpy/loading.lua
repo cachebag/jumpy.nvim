@@ -52,6 +52,10 @@ local function open_float(text, row)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = "nofile"
 
+  -- The float is a single line; nvim_buf_set_lines rejects embedded newlines,
+  -- so collapse any (multi-line error messages) into a single spaced line.
+  text = tostring(text):gsub("%s*\n%s*", " ")
+
   local w = float_width(text)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
 

@@ -47,10 +47,15 @@ M.config = {
     reject_all = "<leader>X",
     reprompt = "<leader>r",
     quickfix = "<leader>q",
+    sidebar = "<leader>s",
   },
   highlights = {
     added = "JumpyAdded",
     removed = "JumpyRemoved",
+  },
+  sidebar = {
+    position = "left", -- "left" or "right"
+    width = 42,
   },
 }
 
@@ -103,6 +108,20 @@ function M.auto_setup()
   vim.api.nvim_create_user_command("JumpyCancel", function()
     require("jumpy.loading").cancel()
   end, { desc = "Cancel all in-flight Jumpy requests" })
+  vim.api.nvim_create_user_command("JumpySidebar", function()
+    require("jumpy.sidebar").toggle()
+  end, { desc = "Toggle Jumpy session sidebar" })
+  vim.api.nvim_create_user_command("JumpySessions", function()
+    require("jumpy.sidebar").pick()
+  end, { desc = "Open a saved Jumpy session" })
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    callback = function()
+      pcall(function()
+        require("jumpy.persist").flush()
+      end)
+    end,
+    desc = "Flush pending Jumpy session to disk",
+  })
 end
 
 function M._setup_highlights()
@@ -111,6 +130,18 @@ function M._setup_highlights()
   hl(0, "JumpyRemoved", { bg = "#3a1a1a", strikethrough = true, default = true })
   hl(0, "JumpyAddedSign", { fg = "#4ec94e", default = true })
   hl(0, "JumpyRemovedSign", { fg = "#e05252", default = true })
+  -- Inspect overlay: a read-only, yellow before/after view of a recorded hunk.
+  hl(0, "JumpyInspect", { bg = "#3a3320", default = true })
+  hl(0, "JumpyInspectSign", { fg = "#d7b95a", default = true })
+  hl(0, "JumpyInspectOther", { fg = "#8a7a3a", italic = true, default = true })
+  hl(0, "JumpySessionBanner", { link = "Comment", default = true })
+  hl(0, "JumpySessionHint", { link = "Comment", default = true })
+  hl(0, "JumpySessionHeader", { link = "Title", default = true })
+  hl(0, "JumpySessionFile", { link = "Directory", default = true })
+  hl(0, "JumpySessionPending", { link = "WarningMsg", default = true })
+  hl(0, "JumpySessionAccepted", { link = "MoreMsg", default = true })
+  hl(0, "JumpySessionRejected", { link = "ErrorMsg", default = true })
+  hl(0, "JumpySessionSuperseded", { link = "Comment", default = true })
 end
 
 function M._setup_keymaps()
@@ -128,6 +159,7 @@ function M._setup_keymaps()
     { c.reject_all, "jumpy.navigate", "reject_all" },
     { c.reprompt, "jumpy.prompt", "reprompt" },
     { c.quickfix, "jumpy.navigate", "add_hunks_to_quickfix" },
+    { c.sidebar, "jumpy.sidebar", "toggle" },
   }
 
   for _, km in ipairs(keymaps) do
