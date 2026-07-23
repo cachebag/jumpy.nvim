@@ -32,6 +32,29 @@ local function same_lines(a, b)
   return vim.deep_equal(a, b)
 end
 
+--- Hunk indices an accept step applied: present in the pre-accept snapshot but
+--- gone from the post-accept one (they were written into the buffer + cleared).
+local function applied_hunk_idxs(entry)
+  local before = (entry.before_state and entry.before_state.hunks) or {}
+  local after = (entry.after_state and entry.after_state.hunks) or {}
+  local idxs = {}
+  for idx, hunk in pairs(before) do
+    if hunk and not after[idx] then
+      idxs[#idxs + 1] = idx
+    end
+  end
+  return idxs
+end
+
+--- Keep the session log in step with native undo/redo: undoing an accept puts
+--- those hunks back to "pending" (the change is no longer applied); redoing it
+--- marks them "accepted" again.
+local function reconcile_session(bufnr, entry, status)
+  for _, idx in ipairs(applied_hunk_idxs(entry)) do
+    session.mark_hunk(bufnr, idx, status)
+  end
+end
+
 local function sync_undo_state(bufnr)
   if syncing_undo[bufnr] or not vim.api.nvim_buf_is_valid(bufnr) then
     return
@@ -50,6 +73,7 @@ local function sync_undo_state(bufnr)
       render.restore(bufnr, entry.before_state)
       restore_offsets(bufnr, entry.before_offsets)
       syncing_undo[bufnr] = nil
+      reconcile_session(bufnr, entry, "pending")
       M._refresh_quickfix()
       return
     end
@@ -58,6 +82,7 @@ local function sync_undo_state(bufnr)
       render.restore(bufnr, entry.after_state)
       restore_offsets(bufnr, entry.after_offsets)
       syncing_undo[bufnr] = nil
+      reconcile_session(bufnr, entry, "accepted")
       M._refresh_quickfix()
       return
     end
