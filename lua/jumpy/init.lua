@@ -130,7 +130,6 @@ function M._setup_highlights()
   hl(0, "JumpyRemoved", { bg = "#3a1a1a", strikethrough = true, default = true })
   hl(0, "JumpyAddedSign", { fg = "#4ec94e", default = true })
   hl(0, "JumpyRemovedSign", { fg = "#e05252", default = true })
-  -- Inspect overlay: a read-only, yellow before/after view of a recorded hunk.
   hl(0, "JumpyInspect", { bg = "#3a3320", default = true })
   hl(0, "JumpyInspectSign", { fg = "#d7b95a", default = true })
   hl(0, "JumpyInspectOther", { fg = "#8a7a3a", italic = true, default = true })
@@ -149,8 +148,10 @@ function M._setup_keymaps()
   local opts = { silent = true }
   local c = M.config.keymaps
 
+  -- The prompt is also bound in visual mode ("x") so you can select a region
+  -- and scope the edit to it; everything else is normal-mode only.
   local keymaps = {
-    { c.prompt, "jumpy.prompt", "open" },
+    { c.prompt, "jumpy.prompt", "open", { "n", "x" } },
     { c.next_hunk, "jumpy.navigate", "next_hunk" },
     { c.prev_hunk, "jumpy.navigate", "prev_hunk" },
     { c.accept, "jumpy.navigate", "accept" },
@@ -163,8 +164,8 @@ function M._setup_keymaps()
   }
 
   for _, km in ipairs(keymaps) do
-    local key, mod, fn = km[1], km[2], km[3]
-    map("n", key, function()
+    local key, mod, fn, modes = km[1], km[2], km[3], km[4] or "n"
+    map(modes, key, function()
       require(mod)[fn]()
     end, opts)
   end

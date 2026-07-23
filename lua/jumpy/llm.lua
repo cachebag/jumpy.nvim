@@ -36,11 +36,29 @@ local function build_messages(context)
     }
   end
 
+  -- A visual selection marks the region to focus on. The full file is still
+  -- sent for context; the model is asked to prefer changing only the selection.
+  local selection_note = ""
+  local sel = context.selection
+  if sel and sel.lines and #sel.lines > 0 then
+    selection_note = string.format(
+      "\n\nFocus on the SELECTED region below (lines %d-%d). Use the rest of the "
+        .. "file as context and prefer to change only the selection:\n"
+        .. "--- SELECTION (lines %d-%d) ---\n%s\n--- END SELECTION ---",
+      sel.start_line or 0,
+      sel.end_line or 0,
+      sel.start_line or 0,
+      sel.end_line or 0,
+      table.concat(sel.lines, "\n")
+    )
+  end
+
   local user_content = string.format(
-    "File type: %s\n\n--- FILE CONTENTS ---\n%s\n--- END FILE ---%s\n\nInstruction: %s",
+    "File type: %s\n\n--- FILE CONTENTS ---\n%s\n--- END FILE ---%s%s\n\nInstruction: %s",
     context.filetype or "text",
     context.file_contents,
     context.symbols,
+    selection_note,
     context.prompt
   )
 
